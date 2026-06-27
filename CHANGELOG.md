@@ -14,6 +14,10 @@ unabhängig weiterentwickelt werden können (Versions-Skew vermeiden).
 - **Adapter `sma_stp_se` v1** (`sma_stp_se_adapter.yaml`): SMA STP SE Hybrid, voll
   agnostisch via `!input` (mode_select / modbus_hub / status / dyn. Ladestärke),
   Min<Max-Guard. Migriert aus dem live (Phase 1a) erprobten Stand.
+- **dyn. Ladestärke als Trigger** ergänzt: Änderung der dynamischen Ladestärke löst den
+  Adapter sofort aus (2 s entprellt), statt erst beim /4-min-Tick → Drosselung greift
+  prompt. Ersetzt die provisorische Live-Brücke-Automation (kann nach Deploy entfernt
+  werden).
 - `docs/modbus-register-referenz.md`, `examples/sma_modbus.example.yaml`.
 
 ### Geplant

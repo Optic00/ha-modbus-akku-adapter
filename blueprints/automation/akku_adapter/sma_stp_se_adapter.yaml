@@ -58,6 +58,7 @@ blueprint:
 triggers:
   - entity_id:
       - !input mode_select
+      - !input dynamic_charge_strength_sensor   # Drosselung sofort übernehmen, nicht erst beim /4-min-Tick
       - input_number.akkusteuerung_entladestaerke_soll
       - input_number.akkusteuerung_ladestaerke_soll
       - input_number.akkusteuerung_02c_ladestaerke
