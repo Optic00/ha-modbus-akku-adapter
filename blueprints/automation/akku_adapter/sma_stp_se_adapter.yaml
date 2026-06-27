@@ -1,0 +1,321 @@
+blueprint:
+  name: "SMA STP SE – Modbus Akku-Adapter"
+  description: >
+    Hardware-Adapter: übersetzt den abstrakten Steuer-Modus (Contract) in
+    Modbus-Register-Schreibvorgänge für den SMA STP SE Hybrid-Wechselrichter.
+
+    Unterstützte Modi (über den Modus-Select / Contract):
+    Automatisch · Schnell Laden · Schnell Entladen · Pause · Nur Laden · Nur Entladen · Dynamisch · 0.2C Laden
+
+
+    **Voraussetzung:** ein Modbus-TCP-Hub zum WR (siehe `examples/sma_modbus.example.yaml`),
+    ein `input_select` mit dem Modus-Vokabular sowie die Sollwert-/SoC-Helfer aus dem
+    Contract (`docs/modus-contract.md`). Die Strategie, die den Modus setzt, ist NICHT
+    Teil dieses Adapters.
+  domain: automation
+  author: Optic00
+  input:
+    modbus_hub:
+      name: Modbus Hub Name
+      description: >
+        Name des Modbus Hubs, wie in sma_modbus.yaml unter `name:` definiert.
+        Standard: sma-sr_wr
+      default: "sma-sr_wr"
+      selector:
+        text:
+
+    inverter_status_sensor:
+      name: WR Betriebsstatus-Sensor
+      description: >
+        Sensor für den Betriebsstatus des Wechselrichters.
+        Muss den Wert "Ok" liefern wenn der WR betriebsbereit ist.
+        Typisch: sensor.sma_stp_se_33003_betriebsstatus
+      selector:
+        entity:
+          domain: sensor
+
+    dynamic_charge_strength_sensor:
+      name: Sensor "Dynamische Ladestärke"
+      description: >
+        Template-Sensor mit der berechneten dynamischen Ladestärke.
+        Wird durch sma_templates.yaml bereitgestellt.
+      default: sensor.akkusteuerung_dynamische_ladestaerke
+      selector:
+        entity:
+          domain: sensor
+
+    mode_select:
+      name: "Modus-Select (Akkusteuerung)"
+      description: >
+        input_select mit dem abstrakten Steuer-Modus (Contract). Dieser Adapter
+        liest den Modus und übersetzt ihn in SMA-Modbus-Register.
+        Standard: input_select.akkusteuerung_modus
+      default: input_select.akkusteuerung_modus
+      selector:
+        entity:
+          domain: input_select
+
+triggers:
+  - entity_id:
+      - !input mode_select
+      - input_number.akkusteuerung_entladestaerke_soll
+      - input_number.akkusteuerung_ladestaerke_soll
+      - input_number.akkusteuerung_02c_ladestaerke
+      - input_number.akkusteuerung_min_ladestaerke
+      - input_number.akkusteuerung_min_entladestaerke
+      - input_number.akkusteuerung_max_ladestaerke
+      - input_number.akkusteuerung_max_entladestaerke
+    from: null
+    to: null
+    for:
+      seconds: 2
+    trigger: state
+
+  - minutes: /4
+    trigger: time_pattern
+
+  - event: start
+    trigger: homeassistant
+
+conditions:
+  - condition: state
+    entity_id: !input inverter_status_sensor
+    state: "Ok"
+
+actions:
+  - alias: Wenn Akku Automatik
+    if:
+      - condition: state
+        entity_id: !input mode_select
+        state: "Akku Automatisch"
+    then:
+      - data:
+          hub: !input modbus_hub
+          address: 40151
+          slave: 3
+          value:
+            - 0
+            - 802
+        action: modbus.write_register
+      - delay:
+          seconds: 2
+      - data:
+          hub: !input modbus_hub
+          address: 40151
+          slave: 3
+          value:
+            - 0
+            - 803
+        action: modbus.write_register
+      - stop: ""
+
+  - alias: Wenn Akku schnell Laden
+    if:
+      - condition: state
+        entity_id: !input mode_select
+        state: "Akku schnell Laden"
+    then:
+      - data:
+          hub: !input modbus_hub
+          address: 40151
+          slave: 3
+          value:
+            - 0
+            - 802
+        action: modbus.write_register
+      - delay:
+          seconds: 2
+      - data:
+          hub: !input modbus_hub
+          address: 40149
+          slave: 3
+          value:
+            - 65535
+            - >-
+              {{ 65535 - states('input_number.akkusteuerung_ladestaerke_soll') | int }}
+        action: modbus.write_register
+      - stop: fertig
+
+  - alias: Wenn Akku schnell Entladen
+    if:
+      - condition: state
+        entity_id: !input mode_select
+        state: "Akku schnell Entladen"
+    then:
+      - data:
+          hub: !input modbus_hub
+          address: 40151
+          slave: 3
+          value:
+            - 0
+            - 802
+        action: modbus.write_register
+      - delay:
+          seconds: 2
+      - data:
+          hub: !input modbus_hub
+          address: 40149
+          slave: 3
+          value:
+            - 0
+            - >-
+              {{ states('input_number.akkusteuerung_entladestaerke_soll') | int }}
+        action: modbus.write_register
+      - stop: fertig
+
+  # --- Standardpfad: Modbus-Basis-Parameter setzen ---
+  - data:
+      hub: !input modbus_hub
+      address: 40151
+      slave: 3
+      value:
+        - 0
+        - 803
+    action: modbus.write_register
+  - delay:
+      seconds: 1
+  - data:
+      hub: !input modbus_hub
+      address: 40793
+      slave: 3
+      value:
+        - 0
+        # Min-Ladestärke nie über die dynamische Max-Ladestärke (40795) → kein Min>Max an die BMS
+        - "{{ [states('input_number.akkusteuerung_min_ladestaerke') | int(0), states('sensor.akkusteuerung_dynamische_ladestaerke') | int(0)] | min }}"
+    action: modbus.write_register
+  - delay:
+      seconds: 1
+  - alias: Schreib die dynamische Ladestärke auf Modbus
+    data:
+      hub: !input modbus_hub
+      address: 40795
+      slave: 3
+      value:
+        - 0
+        - "{{ states('sensor.akkusteuerung_dynamische_ladestaerke') | int }}"
+    action: modbus.write_register
+  - delay:
+      seconds: 1
+  - data:
+      hub: !input modbus_hub
+      address: 40797
+      slave: 3
+      value:
+        - 0
+        # Min-Entladestärke nie über die Max-Entladestärke (40799) → kein Min>Max an die BMS
+        - "{{ [states('input_number.akkusteuerung_min_entladestaerke') | int(0), states('input_number.akkusteuerung_max_entladestaerke') | int(0)] | min }}"
+    action: modbus.write_register
+  - delay:
+      seconds: 1
+  - data:
+      hub: !input modbus_hub
+      address: 40799
+      slave: 3
+      value:
+        - 0
+        - "{{ states('input_number.akkusteuerung_max_entladestaerke') | int }}"
+    action: modbus.write_register
+  - delay:
+      seconds: 1
+  - data:
+      hub: !input modbus_hub
+      address: 40801
+      slave: 3
+      value:
+        - 0
+        - 0
+    action: modbus.write_register
+
+  - alias: Bei "Akku Pause"
+    if:
+      - condition: state
+        entity_id: !input mode_select
+        state: "Akku Pause"
+    then:
+      - data:
+          hub: !input modbus_hub
+          address: 41259
+          slave: 3
+          value:
+            - 0
+            - 303
+        action: modbus.write_register
+
+  - alias: Bei "Akku nur Laden"
+    if:
+      - condition: state
+        entity_id: !input mode_select
+        state: "Akku nur Laden"
+    then:
+      - delay:
+          seconds: 1
+      - data:
+          hub: !input modbus_hub
+          address: 41259
+          slave: 3
+          value:
+            - 0
+            - 2289
+        action: modbus.write_register
+
+  - alias: Bei "Akku nur Entladen"
+    if:
+      - condition: state
+        entity_id: !input mode_select
+        state: "Akku nur Entladen"
+    then:
+      - delay:
+          seconds: 1
+      - data:
+          hub: !input modbus_hub
+          address: 41259
+          slave: 3
+          value:
+            - 0
+            - 2290
+        action: modbus.write_register
+
+  - alias: Bei "Akku Dynamisch"
+    if:
+      - condition: state
+        entity_id: !input mode_select
+        state: "Akku Dynamisch"
+    then:
+      - delay:
+          seconds: 1
+      - data:
+          hub: !input modbus_hub
+          address: 40236
+          slave: 3
+          value:
+            - 0
+            - 1438
+        action: modbus.write_register
+
+  - alias: Bei "Akku 0.2C Laden"
+    if:
+      - condition: state
+        entity_id: !input mode_select
+        state: "Akku 0.2C Laden"
+    then:
+      - data:
+          hub: !input modbus_hub
+          address: 40151
+          slave: 3
+          value:
+            - 0
+            - 802
+        action: modbus.write_register
+      - delay:
+          seconds: 2
+      - data:
+          hub: !input modbus_hub
+          address: 40149
+          slave: 3
+          value:
+            - 65535
+            - >-
+              {{ 65535 - states('input_number.akkusteuerung_02c_ladestaerke') | int }}
+        action: modbus.write_register
+
+mode: single
