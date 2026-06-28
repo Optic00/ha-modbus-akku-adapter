@@ -55,6 +55,10 @@ blueprint:
         entity:
           domain: input_select
 
+variables:
+  # !input ist in Jinja nicht direkt verfügbar – erst als Variable exponieren.
+  dyn_charge_entity: !input dynamic_charge_strength_sensor
+
 triggers:
   - entity_id:
       - !input mode_select
@@ -182,7 +186,7 @@ actions:
       value:
         - 0
         # Min-Ladestärke nie über die dynamische Max-Ladestärke (40795) → kein Min>Max an die BMS
-        - "{{ [states('input_number.akkusteuerung_min_ladestaerke') | int(0), states('sensor.akkusteuerung_dynamische_ladestaerke') | int(0)] | min }}"
+        - "{{ [states('input_number.akkusteuerung_min_ladestaerke') | int(0), states(dyn_charge_entity) | int(0)] | min }}"
     action: modbus.write_register
   - delay:
       seconds: 1
@@ -193,7 +197,7 @@ actions:
       slave: 3
       value:
         - 0
-        - "{{ states('sensor.akkusteuerung_dynamische_ladestaerke') | int }}"
+        - "{{ states(dyn_charge_entity) | int(0) }}"
     action: modbus.write_register
   - delay:
       seconds: 1
