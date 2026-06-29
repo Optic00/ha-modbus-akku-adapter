@@ -29,8 +29,6 @@ Szenen → Blueprints → Blueprint importieren* → Raw-URL einfügen.
 | SMA SBS | `sma_sbs_adapter.yaml` | – | 🧪 geplant (Register-Map abweichend) |
 | Andere (z. B. Huawei) | – | – | 💬 offen |
 
-> Privates Repo: Raw-URLs funktionieren erst nach Veröffentlichung bzw. mit Token.
-
 ---
 
 ## Voraussetzungen
@@ -52,3 +50,7 @@ Szenen → Blueprints → Blueprint importieren* → Raw-URL einfügen.
 - **Min < Max:** Der Adapter setzt Min-Ladeleistung vor der Max-Leistung (Guard).
 - Werte vor Produktivbetrieb an der eigenen Anlage prüfen (Register/Encoding können je
   Firmware abweichen).
+
+## Lizenz
+
+[MIT](LICENSE) – Nutzung auf eigene Gefahr (siehe Disclaimer oben).

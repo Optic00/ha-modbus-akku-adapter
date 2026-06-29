@@ -8,6 +8,19 @@ unabhängig weiterentwickelt werden können (Versions-Skew vermeiden).
 
 ## [Unreleased]
 
+### Geplant
+- **Write-on-Change**: nur schreiben wenn Wert geändert ODER letzter Write älter als
+  Keepalive-Intervall (SMA-Fremdsteuerung läuft sonst aus). Reduziert Modbus-Last.
+- `sma_sbs_adapter.yaml` (abweichendes Register-Map, gleicher Contract).
+- Capability-Schicht (Adapter meldet Fähigkeiten) – erst mit erstem Nicht-SMA-Adapter.
+
+## [1.0.0] – 2026-06-29 — Erster öffentlicher Stand
+
+Erste öffentliche Veröffentlichung. Der Adapter ist live (Phase 1a) über einen
+Tageszyklus erprobt. Nutzung: entweder mit einer **eigenen Strategie**, die
+`input_select.akkusteuerung_modus` setzt, oder mit dem Schwesterprojekt
+[`ha-opti-akkusteuerung`](https://github.com/Optic00/ha-opti-akkusteuerung).
+
 ### Hinzugefügt
 - Initiales Repo, ausgegliedert aus `ha-opti-akku-blueprint` (Branch `modernisierung`).
 - **Contract v1** (`docs/modus-contract.md`): 8 Modi, `input_select.akkusteuerung_modus`.
@@ -19,9 +32,3 @@ unabhängig weiterentwickelt werden können (Versions-Skew vermeiden).
   prompt. Ersetzt die provisorische Live-Brücke-Automation (kann nach Deploy entfernt
   werden).
 - `docs/modbus-register-referenz.md`, `examples/sma_modbus.example.yaml`.
-
-### Geplant
-- **Write-on-Change**: nur schreiben wenn Wert geändert ODER letzter Write älter als
-  Keepalive-Intervall (SMA-Fremdsteuerung läuft sonst aus). Reduziert Modbus-Last.
-- `sma_sbs_adapter.yaml` (abweichendes Register-Map, gleicher Contract).
-- Capability-Schicht (Adapter meldet Fähigkeiten) – erst mit erstem Nicht-SMA-Adapter.
