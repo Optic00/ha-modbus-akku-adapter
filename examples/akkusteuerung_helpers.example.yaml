@@ -1,0 +1,115 @@
+# =============================================================================
+# Helfer (Helpers) für den SMA STP SE Akku-Adapter
+# =============================================================================
+# Diese Helfer bilden den "Modus-Contract" ab, den der Adapter-Blueprint liest.
+# Ohne sie funktioniert das Blueprint NICHT.
+#
+# Einbinden: Inhalt nach configuration.yaml kopieren (oder in ein Package legen)
+# und Home Assistant neu starten. Danach existieren das Dropdown
+# `input_select.akkusteuerung_modus` und die `input_number.*`-Helfer.
+#
+# Alternativ lassen sich dieselben Helfer über die UI anlegen:
+#   Einstellungen → Geräte & Dienste → Helfer → Helfer erstellen
+#   (Dropdown = "Auswahl", Leistungswerte = "Zahl"). Wichtig: die Namen müssen
+#   die unten gezeigten entity_ids ergeben und die Dropdown-Optionen EXAKT
+#   (Groß-/Kleinschreibung, Leerzeichen) übereinstimmen.
+# =============================================================================
+
+input_select:
+  # Das zentrale Steuer-Dropdown ("Modus-Contract"). Die Strategie setzt es,
+  # der Adapter liest es. Die 8 Optionen müssen GENAU so heißen:
+  akkusteuerung_modus:
+    name: Akkusteuerung Modus
+    icon: mdi:battery-charging
+    initial: Akku Automatisch
+    options:
+      - Akku Automatisch       # WR-Eigenregelung / Standard
+      - Akku Dynamisch         # Adapter regelt auf Ziel (SoC/Leistungsgrenzen)
+      - Akku Pause             # weder laden noch entladen
+      - Akku nur Laden         # Entladen gesperrt
+      - Akku nur Entladen      # Laden gesperrt
+      - Akku schnell Laden     # erzwungenes Laden mit "Ladestärke Soll"
+      - Akku schnell Entladen  # erzwungenes Entladen mit "Entladestärke Soll"
+      - Akku 0.2C Laden        # Preset: erzwungenes Laden mit "0.2C Ladestärke"
+
+input_number:
+  # Alle Werte in WATT. Grenzen/Step nach eigener Anlage anpassen.
+  akkusteuerung_ladestaerke_soll:        # für "Akku schnell Laden"
+    name: Ladestärke Soll
+    min: 0
+    max: 11000
+    step: 50
+    unit_of_measurement: W
+    mode: box
+
+  akkusteuerung_entladestaerke_soll:     # für "Akku schnell Entladen"
+    name: Entladestärke Soll
+    min: 0
+    max: 11000
+    step: 50
+    unit_of_measurement: W
+    mode: box
+
+  akkusteuerung_02c_ladestaerke:         # für "Akku 0.2C Laden"
+    name: 0.2C Ladestärke
+    min: 0
+    max: 11000
+    step: 50
+    unit_of_measurement: W
+    mode: box
+
+  akkusteuerung_min_ladestaerke:         # Untergrenze Laden (Standardpfad)
+    name: Min Ladestärke
+    min: 0
+    max: 11000
+    step: 50
+    unit_of_measurement: W
+    mode: box
+
+  akkusteuerung_max_ladestaerke:         # Obergrenze Laden
+    name: Max Ladestärke
+    min: 0
+    max: 11000
+    step: 50
+    unit_of_measurement: W
+    mode: box
+
+  akkusteuerung_min_entladestaerke:      # Untergrenze Entladen
+    name: Min Entladestärke
+    min: 0
+    max: 11000
+    step: 50
+    unit_of_measurement: W
+    mode: box
+
+  akkusteuerung_max_entladestaerke:      # Obergrenze Entladen
+    name: Max Entladestärke
+    min: 0
+    max: 11000
+    step: 50
+    unit_of_measurement: W
+    mode: box
+
+# =============================================================================
+# Zusätzlich vom Blueprint erwartet (NICHT in dieser Datei, weil anlagen-/
+# strategieabhängig):
+#
+# 1) Sensor "Dynamische Ladestärke" (Watt)
+#    Blueprint-Default: sensor.akkusteuerung_dynamische_ladestaerke
+#    Liefert die gewünschte Ladeleistung. Kommt von deiner STRATEGIE – z. B. aus
+#    dem Schwesterprojekt ha-opti-akkusteuerung – oder du baust einen eigenen
+#    (Template-)Sensor, der schlicht eine Watt-Zahl ausgibt.
+#
+# 2) WR-Betriebsstatus-Sensor, der "Ok" liefert, wenn der WR bereit ist.
+#    Der rohe Modbus-Sensor (Register 33003) gibt nur Zahlen zurück (z. B. 235 =
+#    Netzparallelbetrieb). Mappe ihn per Template auf "Ok", z. B.:
+#
+#    template:
+#      - sensor:
+#          - name: SMA WR Status
+#            state: >
+#              {% set s = states('sensor.sma_stp_se_33003_betriebsstatus') | int(0) %}
+#              {{ 'Ok' if s in [235, 1463] else 'nicht bereit' }}
+#
+#    Diesen Sensor im Blueprint als "WR Betriebsstatus-Sensor" auswählen.
+# =============================================================================
