@@ -8,6 +8,19 @@ unabhängig weiterentwickelt werden können (Versions-Skew vermeiden).
 
 ## [Unreleased]
 
+### Geändert
+- **0.2C-Ladeleistung automatisch aus der Batteriekapazität** (Register 40187):
+  Modus „Akku 0.2C Laden" rechnet jetzt `0,2 × Kapazität` selbst. Neuer Blueprint-Input
+  `battery_capacity_sensor` (Default: `sensor.sma_stp_se_40187_batterie_nennkapazitaet`).
+  Der manuelle Helfer `input_number.akkusteuerung_02c_ladestaerke` **entfällt**.
+  ⚠️ Wer den Adapter aus v1.0.0 importiert hat: alten 0.2C-Helfer entfernen und im
+  Blueprint den Kapazitäts-Sensor zuweisen (Default passt meist).
+- **Doku auf GUI-first** umgestellt: Helfer per Oberfläche anlegen (mit Hinweis auf exakte
+  Entity-IDs); Modbus bleibt YAML (HA hat dafür keine GUI). YAML-Helfer-Datei bleibt als
+  Abkürzung erhalten.
+- `docs/modbus-register-referenz.md`: Hinweis ergänzt, dass der Blueprint die Variante
+  `65535 − P` nutzt (lädt ~1 W mehr als die exakte SMA-Formel `65536 − P`, vernachlässigbar).
+
 ### Geplant
 - **Write-on-Change**: nur schreiben wenn Wert geändert ODER letzter Write älter als
   Keepalive-Intervall (SMA-Fremdsteuerung läuft sonst aus). Reduziert Modbus-Last.

@@ -99,7 +99,7 @@ Quelle: Offizielle SMA Support-Antwort (via [Photovoltaikforum, ajay123](https:/
 
 Beispiel: 3000 W Laden → `[65535, 62536]`
 
-> ℹ️ **Hinweis zur Laden-Formel:** Die beiden 16-Bit-Wörter werden vom WR als ein vorzeichenbehafteter S32 gelesen (Laden = negativ). Das korrekte Zweierkomplement für −P W ist `[65535, 65536 − P]`. Eine ältere, in der Praxis ebenfalls genutzte Variante `65535 − P` ergibt **−(P+1) W** (1 W zu viel) – für die Steuerung praktisch irrelevant, aber `65536 − P` ist exakt.
+> ℹ️ **Hinweis zur Laden-Formel:** Die beiden 16-Bit-Wörter werden vom WR als ein vorzeichenbehafteter S32 gelesen (Laden = negativ). Das korrekte Zweierkomplement für −P W ist `[65535, 65536 − P]`. Eine ältere, in der Praxis ebenfalls genutzte Variante `65535 − P` ergibt **−(P+1) W** (1 W zu viel) – für die Steuerung praktisch irrelevant, aber `65536 − P` ist exakt. Der Adapter-Blueprint nutzt aktuell diese `65535 − P`-Variante in beiden Lade-Branches (schnell Laden / 0.2C) und ist so live getestet.
 
 ---
 

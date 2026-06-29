@@ -44,6 +44,17 @@ blueprint:
         entity:
           domain: sensor
 
+    battery_capacity_sensor:
+      name: Sensor "Batterie-Nennkapazität"
+      description: >
+        Sensor mit der Nennkapazität der Batterie in Wh (Modbus-Register 40187).
+        Wird für den Modus "Akku 0.2C Laden" gebraucht: die Ladeleistung ergibt
+        sich automatisch als 0,2 × Kapazität (z. B. 12800 Wh → 2560 W).
+      default: sensor.sma_stp_se_40187_batterie_nennkapazitaet
+      selector:
+        entity:
+          domain: sensor
+
     mode_select:
       name: "Modus-Select (Akkusteuerung)"
       description: >
@@ -58,6 +69,7 @@ blueprint:
 variables:
   # !input ist in Jinja nicht direkt verfügbar – erst als Variable exponieren.
   dyn_charge_entity: !input dynamic_charge_strength_sensor
+  capacity_entity: !input battery_capacity_sensor
 
 triggers:
   - entity_id:
@@ -65,7 +77,6 @@ triggers:
       - !input dynamic_charge_strength_sensor   # Drosselung sofort übernehmen, nicht erst beim /4-min-Tick
       - input_number.akkusteuerung_entladestaerke_soll
       - input_number.akkusteuerung_ladestaerke_soll
-      - input_number.akkusteuerung_02c_ladestaerke
       - input_number.akkusteuerung_min_ladestaerke
       - input_number.akkusteuerung_min_entladestaerke
       - input_number.akkusteuerung_max_ladestaerke
@@ -313,6 +324,8 @@ actions:
         action: modbus.write_register
       - delay:
           seconds: 2
+      # 0.2C-Ladeleistung = 0,2 × Batterie-Nennkapazität (Wh) → W; kein manueller Helfer nötig.
+      # Kapazität nicht verfügbar → 0 → 65535-0=65535 → ~1 W (praktisch null, harmlos).
       - data:
           hub: !input modbus_hub
           address: 40149
@@ -320,7 +333,7 @@ actions:
           value:
             - 65535
             - >-
-              {{ 65535 - states('input_number.akkusteuerung_02c_ladestaerke') | int }}
+              {{ 65535 - ((0.2 * states(capacity_entity) | float(0)) | round(0) | int) }}
         action: modbus.write_register
 
 mode: single
