@@ -8,6 +8,18 @@ unabhängig weiterentwickelt werden können (Versions-Skew vermeiden).
 
 ## [Unreleased]
 
+### Geplant
+- **Write-on-Change**: nur schreiben wenn Wert geändert ODER letzter Write älter als
+  Keepalive-Intervall (SMA-Fremdsteuerung läuft sonst aus). Reduziert Modbus-Last.
+- `sma_sbs_adapter.yaml` (abweichendes Register-Map, gleicher Contract).
+- Capability-Schicht (Adapter meldet Fähigkeiten) – erst mit erstem Nicht-SMA-Adapter.
+
+## [1.1.0] – 2026-06-29 — Adapter `sma_stp_se`: 0.2C automatisch
+
+Additives MINOR-Release (Contract unverändert, neuer Blueprint-Input hat einen Default).
+Wer aus 1.0.0 aktualisiert, muss nichts tun, sofern der Kapazitäts-Sensor dem Default
+entspricht — der frühere manuelle 0.2C-Helfer wird dann nur überflüssig.
+
 ### Geändert
 - **0.2C-Ladeleistung automatisch aus der Batteriekapazität** (Register 40187):
   Modus „Akku 0.2C Laden" rechnet jetzt `0,2 × Kapazität` selbst. Neuer Blueprint-Input
@@ -20,12 +32,6 @@ unabhängig weiterentwickelt werden können (Versions-Skew vermeiden).
   Abkürzung erhalten.
 - `docs/modbus-register-referenz.md`: Hinweis ergänzt, dass der Blueprint die Variante
   `65535 − P` nutzt (lädt ~1 W mehr als die exakte SMA-Formel `65536 − P`, vernachlässigbar).
-
-### Geplant
-- **Write-on-Change**: nur schreiben wenn Wert geändert ODER letzter Write älter als
-  Keepalive-Intervall (SMA-Fremdsteuerung läuft sonst aus). Reduziert Modbus-Last.
-- `sma_sbs_adapter.yaml` (abweichendes Register-Map, gleicher Contract).
-- Capability-Schicht (Adapter meldet Fähigkeiten) – erst mit erstem Nicht-SMA-Adapter.
 
 ## [1.0.0] – 2026-06-29 — Erster öffentlicher Stand
 
