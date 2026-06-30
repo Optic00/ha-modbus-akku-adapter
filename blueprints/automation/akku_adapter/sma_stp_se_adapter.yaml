@@ -98,7 +98,7 @@ blueprint:
       selector:
         number:
           min: 30
-          max: 280
+          max: 200
           step: 10
           unit_of_measurement: s
           mode: box
@@ -142,6 +142,10 @@ triggers:
   - minutes: /4
     trigger: time_pattern
 
+  - minutes: /1
+    trigger: time_pattern
+    id: keepalive_check
+
   - event: start
     trigger: homeassistant
     id: ha_start
@@ -150,6 +154,8 @@ conditions:
   - condition: state
     entity_id: !input inverter_status_sensor
     state: "Ok"
+  - condition: template
+    value_template: "{{ not (trigger.id == 'keepalive_check' and not write_needed) }}"
 
 actions:
   - alias: Wenn Akku Automatik
@@ -203,6 +209,12 @@ actions:
             - >-
               {{ 65535 - states('input_number.akkusteuerung_ladestaerke_soll') | int }}
         action: modbus.write_register
+      - action: input_text.set_value
+        continue_on_error: true
+        target:
+          entity_id: "{{ snapshot_helper }}"
+        data:
+          value: ""
       - stop: fertig
 
   - alias: Wenn Akku schnell Entladen
@@ -230,6 +242,12 @@ actions:
             - >-
               {{ states('input_number.akkusteuerung_entladestaerke_soll') | int }}
         action: modbus.write_register
+      - action: input_text.set_value
+        continue_on_error: true
+        target:
+          entity_id: "{{ snapshot_helper }}"
+        data:
+          value: ""
       - stop: fertig
 
   # --- Standardpfad: Fremdsteuerung aktivieren (immer, kein Write-on-Change) ---
@@ -299,11 +317,13 @@ actions:
             - 0
         action: modbus.write_register
       - action: input_datetime.set_datetime
+        continue_on_error: true
         target:
           entity_id: "{{ timestamp_helper }}"
         data:
           timestamp: "{{ now().timestamp() }}"
       - action: input_text.set_value
+        continue_on_error: true
         target:
           entity_id: "{{ snapshot_helper }}"
         data:
