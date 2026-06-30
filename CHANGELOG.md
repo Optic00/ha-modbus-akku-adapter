@@ -37,8 +37,11 @@ den Fallback "Keepalive abgelaufen" und schreibt wie bisher bei jedem Trigger.
   allein hätte die Schreib-Lücke bei stabilen Werten auf bis zu `keepalive_seconds +
   240s` anwachsen lassen können — über dem 300s-Hersteller-Limit. Ein feinerer Tick
   prüft jetzt jede Minute, ob der Keepalive abgelaufen ist, bricht den Lauf aber
-  sofort ab (kein Modbus-Write), wenn nichts ansteht. `keepalive_seconds`-Max
-  deshalb von 280s auf 200s gesenkt (Worst-Case-Lücke jetzt ~266s).
+  sofort ab (kein Modbus-Write), wenn nichts ansteht — und zwar auch in „Akku
+  Automatisch"/„schnell Laden"/„schnell Entladen", die den BMS-Gate nie erreichen
+  (sonst liefe die Automation dort fälschlich jede Minute statt wie bisher alle
+  240s). `keepalive_seconds`-Max deshalb von 280s auf 200s gesenkt
+  (Worst-Case-Lücke jetzt ~266s).
 - Nach „Akku schnell Laden"/„Akku schnell Entladen" wird beim nächsten
   Standardpfad-Lauf zwangsweise neu geschrieben (Snapshot wird beim Verlassen
   dieser Modi invalidiert) — verhindert, dass die BMS-Wertregister nach dem
