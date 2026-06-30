@@ -9,10 +9,30 @@ unabhängig weiterentwickelt werden können (Versions-Skew vermeiden).
 ## [Unreleased]
 
 ### Geplant
-- **Write-on-Change**: nur schreiben wenn Wert geändert ODER letzter Write älter als
-  Keepalive-Intervall (SMA-Fremdsteuerung läuft sonst aus). Reduziert Modbus-Last.
 - `sma_sbs_adapter.yaml` (abweichendes Register-Map, gleicher Contract).
 - Capability-Schicht (Adapter meldet Fähigkeiten) – erst mit erstem Nicht-SMA-Adapter.
+
+## [1.2.0] – 2026-06-30 — Adapter `sma_stp_se`: Write-on-Change
+
+Additives MINOR-Release (Contract unverändert, neue Inputs haben Defaults). Wer
+aus 1.1.0 aktualisiert, muss die zwei neuen Helfer anlegen (siehe README Schritt 2e
+bzw. `examples/akkusteuerung_helpers.example.yaml`) — ohne sie nutzt der Adapter
+den Fallback "Keepalive abgelaufen" und schreibt wie bisher bei jedem Trigger.
+
+### Geändert
+- **Write-on-Change für die BMS-Wertregister** (40793/40795/40797/40799/40801):
+  werden nur noch geschrieben, wenn sich der berechnete Wert geändert hat oder der
+  letzte Write länger als `keepalive_seconds` (Default 180s, Hersteller-Limit 300s)
+  zurückliegt. Reduziert die Modbus-Last bei unveränderten Werten von 5 Writes auf 0.
+  Neue Helfer `input_text.akkusteuerung_modbus_letzter_schreibwert` und
+  `input_datetime.akkusteuerung_modbus_letzter_schreibzeitpunkt` speichern den
+  Zustand persistent (überlebt HA-Neustarts).
+- Register 40151 bleibt unverändert immer unconditional geschrieben (kein Teil des
+  Write-on-Change-Gates) — verhindert, dass der WR nach „Akku schnell Laden/Entladen"
+  fälschlich im Fremdsteuerungs-Modus (`802`) hängen bleibt.
+- Bei HA-Start wird das Gate bewusst umgangen (immer geschrieben) — wie bisher,
+  unabhängig vom Keepalive-Zustand, da der tatsächliche WR-Zustand nach einem
+  Neustart unbekannt ist.
 
 ## [1.1.0] – 2026-06-29 — Adapter `sma_stp_se`: 0.2C automatisch
 
