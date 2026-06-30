@@ -232,7 +232,7 @@ actions:
         action: modbus.write_register
       - stop: fertig
 
-  # --- Standardpfad: Modbus-Basis-Parameter setzen ---
+  # --- Standardpfad: Fremdsteuerung aktivieren (immer, kein Write-on-Change) ---
   - data:
       hub: !input modbus_hub
       address: 40151
@@ -243,57 +243,71 @@ actions:
     action: modbus.write_register
   - delay:
       seconds: 1
-  - data:
-      hub: !input modbus_hub
-      address: 40793
-      slave: 3
-      value:
-        - 0
-        # Min-Ladestärke nie über die dynamische Max-Ladestärke (40795) → kein Min>Max an die BMS
-        - "{{ [states('input_number.akkusteuerung_min_ladestaerke') | int(0), states(dyn_charge_entity) | int(0)] | min }}"
-    action: modbus.write_register
-  - delay:
-      seconds: 1
-  - alias: Schreib die dynamische Ladestärke auf Modbus
-    data:
-      hub: !input modbus_hub
-      address: 40795
-      slave: 3
-      value:
-        - 0
-        - "{{ states(dyn_charge_entity) | int(0) }}"
-    action: modbus.write_register
-  - delay:
-      seconds: 1
-  - data:
-      hub: !input modbus_hub
-      address: 40797
-      slave: 3
-      value:
-        - 0
-        # Min-Entladestärke nie über die Max-Entladestärke (40799) → kein Min>Max an die BMS
-        - "{{ [states('input_number.akkusteuerung_min_entladestaerke') | int(0), states('input_number.akkusteuerung_max_entladestaerke') | int(0)] | min }}"
-    action: modbus.write_register
-  - delay:
-      seconds: 1
-  - data:
-      hub: !input modbus_hub
-      address: 40799
-      slave: 3
-      value:
-        - 0
-        - "{{ states('input_number.akkusteuerung_max_entladestaerke') | int }}"
-    action: modbus.write_register
-  - delay:
-      seconds: 1
-  - data:
-      hub: !input modbus_hub
-      address: 40801
-      slave: 3
-      value:
-        - 0
-        - 0
-    action: modbus.write_register
+
+  # --- BMS-Wertregister: nur bei Aenderung oder abgelaufenem Keepalive schreiben ---
+  - if:
+      - condition: template
+        value_template: "{{ write_needed }}"
+    then:
+      - data:
+          hub: !input modbus_hub
+          address: 40793
+          slave: 3
+          value:
+            - 0
+            - "{{ v_40793 }}"
+        action: modbus.write_register
+      - delay:
+          seconds: 1
+      - alias: Schreib die dynamische Ladestärke auf Modbus
+        data:
+          hub: !input modbus_hub
+          address: 40795
+          slave: 3
+          value:
+            - 0
+            - "{{ v_40795 }}"
+        action: modbus.write_register
+      - delay:
+          seconds: 1
+      - data:
+          hub: !input modbus_hub
+          address: 40797
+          slave: 3
+          value:
+            - 0
+            - "{{ v_40797 }}"
+        action: modbus.write_register
+      - delay:
+          seconds: 1
+      - data:
+          hub: !input modbus_hub
+          address: 40799
+          slave: 3
+          value:
+            - 0
+            - "{{ v_40799 }}"
+        action: modbus.write_register
+      - delay:
+          seconds: 1
+      - data:
+          hub: !input modbus_hub
+          address: 40801
+          slave: 3
+          value:
+            - 0
+            - 0
+        action: modbus.write_register
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: "{{ timestamp_helper }}"
+        data:
+          timestamp: "{{ now().timestamp() }}"
+      - action: input_text.set_value
+        target:
+          entity_id: "{{ snapshot_helper }}"
+        data:
+          value: "{{ current_snapshot }}"
 
   - alias: Bei "Akku Pause"
     if:
