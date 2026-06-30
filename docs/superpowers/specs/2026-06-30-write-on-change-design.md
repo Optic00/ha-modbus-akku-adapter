@@ -183,3 +183,38 @@ Snapshot-Invalidierung in Fix 2) bekommen `continue_on_error: true` — verhinde
 dass ein fehlender Helfer die Sequenz abbricht oder Fehler eskaliert. Fail-safe-
 Richtung: schlägt das Update fehl, bleibt der alte Timestamp/Snapshot stehen →
 `write_needed` bleibt eher `true` → tendenziell mehr statt weniger Writes.
+
+## Nachtrag 2 (2026-06-30): Fix für eine von Fix 1 verursachte Nebenwirkung
+
+Die erneute finale Review (nach Nachtrag 1) fand, dass Fix 1 selbst eine neue
+Nebenwirkung hat, ebenfalls von Opus-Subagent und Codex bestätigt:
+
+**Important — `/1`-Tick überspringt nie in „Akku Automatisch"/„schnell
+Laden"/„schnell Entladen".** `write_needed` wird ausschließlich im
+Standardpfad-Gate berechnet bzw. der zugehörige Timestamp-Helfer dort
+aktualisiert. Die drei genannten Modi `stop:`en aber VOR dem Standardpfad und
+aktualisieren den Timestamp nie — dort ist `write_needed` deshalb dauerhaft
+`true`. Der `/1`-Tick übersprang den Lauf in diesen Modi folglich nie: die
+Automation lief dort alle 60s statt wie zuvor alle 240s (über den unveränderten
+`/4`-Tick) — eine 4-fache Lasterhöhung im Default-Modus „Automatisch", obwohl das
+Feature genau das Gegenteil bezweckt. Betrifft auch unmigrierte v1.1.0-Systeme
+ohne die neuen Helfer (dort ist `write_needed` ebenfalls überall dauerhaft
+`true`).
+
+**Fix:** Eine neue Variable `early_stop_modes` (Liste der drei Modus-Strings) und
+`mode_select_entity` (für Jinja-Zugriff auf den Modus, analog zu
+`dyn_charge_entity`) werden ergänzt. Die Skip-Condition wird erweitert (positive
+Formulierung, von Codex empfohlen):
+
+```yaml
+  - condition: template
+    value_template: >-
+      {{ trigger.id != 'keepalive_check'
+         or (states(mode_select_entity) not in early_stop_modes and write_needed) }}
+```
+
+Der `/1`-Tick überspringt jetzt zusätzlich, sobald der aktuelle Modus einer der
+drei early-stop-Modi ist — unabhängig von `write_needed`, da der `/1`-Tick dort
+ohnehin keinen Zweck hat (diese Modi nutzen den BMS-Gate nie). Der bestehende
+`/4`-Tick bleibt unverändert und übernimmt für diese drei Modi weiterhin die
+periodische Auffrischung, exakt wie vor dem gesamten Write-on-Change-Feature.

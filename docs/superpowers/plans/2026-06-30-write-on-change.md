@@ -731,6 +731,93 @@ EOF
 
 ---
 
+### Task 6b: Mode-gated Keepalive-Skip (Fix für Fix-1-Nebenwirkung)
+
+**Files:**
+- Modify: `blueprints/automation/akku_adapter/sma_stp_se_adapter.yaml`
+
+**Interfaces:**
+- Consumes: `write_needed` aus Task 3; die neue `keepalive_check`-Trigger-ID und
+  Skip-Condition aus Task 6 (wird hier erweitert, nicht ersetzt).
+
+Hintergrund: Der wiederholte finale Whole-Branch-Review (nach Task 6) fand, dass
+Fix 1 selbst eine Nebenwirkung hat: `write_needed` wird nur im Standardpfad-Gate
+aktualisiert; in „Akku Automatisch"/„Akku schnell Laden"/„Akku schnell Entladen"
+(die VOR dem Standardpfad `stop:`en) bleibt `write_needed` dauerhaft `true`, der
+neue `/1`-Tick überspringt dort folglich nie — die Automation läuft im
+Default-Modus „Automatisch" jetzt alle 60s statt alle 240s. Von Opus-Subagent und
+Codex unabhängig verifiziertes Fix-Design (siehe Spec-Nachtrag 2 vom 2026-06-30).
+
+- [ ] **Step 1: Zwei neue Variablen ergänzen**
+
+Füge im `variables:`-Block (nach `keepalive_s: !input keepalive_seconds`, vor
+`v_40793: ...`) folgende zwei Zeilen ein:
+
+```yaml
+  mode_select_entity: !input mode_select
+  early_stop_modes: ['Akku Automatisch', 'Akku schnell Laden', 'Akku schnell Entladen']
+```
+
+- [ ] **Step 2: Skip-Condition erweitern**
+
+Ändere die in Task 6 hinzugefügte Condition von:
+
+```yaml
+  - condition: template
+    value_template: "{{ not (trigger.id == 'keepalive_check' and not write_needed) }}"
+```
+
+zu (positive Formulierung, logisch äquivalent erweitert um die Modus-Prüfung):
+
+```yaml
+  - condition: template
+    value_template: >-
+      {{ trigger.id != 'keepalive_check'
+         or (states(mode_select_entity) not in early_stop_modes and write_needed) }}
+```
+
+- [ ] **Step 3: YAML-Syntax validieren**
+
+Run: `python3 << 'PYEOF'
+import yaml
+def input_constructor(loader, node):
+    return f"!input {node.value}"
+yaml.add_constructor('!input', input_constructor, Loader=yaml.SafeLoader)
+with open('blueprints/automation/akku_adapter/sma_stp_se_adapter.yaml') as f:
+    yaml.safe_load(f)
+print("OK")
+PYEOF`
+Expected: `OK`
+
+- [ ] **Step 4: Scope-Diff prüfen**
+
+Run: `git diff` gegen den vorherigen Commit und bestätige: nur die zwei neuen
+Variablen und die geänderte Condition betroffen. Die Trigger-Definition, der
+`keepalive_seconds`-Selector, die Snapshot-Invalidierungs-Aktionen und die
+`continue_on_error`-Ergänzungen aus Task 6 bleiben unverändert.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add blueprints/automation/akku_adapter/sma_stp_se_adapter.yaml
+git commit -m "$(cat <<'EOF'
+sma_stp_se: /1-Keepalive-Tick auf Standardpfad-Modi begrenzen
+
+Fix einer Nebenwirkung aus dem vorigen Sicherheitsfix: write_needed bleibt in
+Automatisch/schnell-Laden/schnell-Entladen dauerhaft true (Timestamp wird dort
+nie aktualisiert), wodurch der /1-Tick nie skippte -> 4x Last im Default-Modus.
+Neue early_stop_modes-Variable + erweiterte Skip-Condition beheben das; der
+bestehende /4-Tick uebernimmt fuer diese drei Modi weiterhin die Auffrischung,
+unveraendert zum Stand vor Write-on-Change.
+
+Design von Opus-Subagent und Codex CLI unabhaengig verifiziert, siehe
+docs/superpowers/specs/2026-06-30-write-on-change-design.md (Nachtrag 2).
+EOF
+)"
+```
+
+---
+
 ### Task 7: Manuelle Verifikation (Live-System)
 
 **Files:** keine Code-Änderungen — reine Verifikationsschritte.
