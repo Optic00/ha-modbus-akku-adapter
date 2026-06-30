@@ -107,6 +107,21 @@ variables:
   # !input ist in Jinja nicht direkt verfügbar – erst als Variable exponieren.
   dyn_charge_entity: !input dynamic_charge_strength_sensor
   capacity_entity: !input battery_capacity_sensor
+  snapshot_helper: !input last_write_value_helper
+  timestamp_helper: !input last_write_time_helper
+  keepalive_s: !input keepalive_seconds
+  v_40793: "{{ [states('input_number.akkusteuerung_min_ladestaerke') | int(0), states(dyn_charge_entity) | int(0)] | min }}"
+  v_40795: "{{ states(dyn_charge_entity) | int(0) }}"
+  v_40797: "{{ [states('input_number.akkusteuerung_min_entladestaerke') | int(0), states('input_number.akkusteuerung_max_entladestaerke') | int(0)] | min }}"
+  v_40799: "{{ states('input_number.akkusteuerung_max_entladestaerke') | int(0) }}"
+  current_snapshot: "{{ [v_40793, v_40795, v_40797, v_40799, 0] | join('|') }}"
+  write_needed: >-
+    {% set valid_dt = state_attr(timestamp_helper, 'has_date') and state_attr(timestamp_helper, 'has_time') %}
+    {% set last_ts = as_timestamp(states(timestamp_helper), none) if valid_dt else none %}
+    {{ trigger.id == 'ha_start'
+       or current_snapshot != states(snapshot_helper)
+       or last_ts is none
+       or (now().timestamp() - last_ts) > (keepalive_s | int(0)) }}
 
 triggers:
   - entity_id:
