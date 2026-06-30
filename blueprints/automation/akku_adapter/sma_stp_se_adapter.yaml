@@ -129,6 +129,7 @@ triggers:
 
   - event: start
     trigger: homeassistant
+    id: ha_start
 
 conditions:
   - condition: state
