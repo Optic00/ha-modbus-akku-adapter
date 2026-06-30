@@ -109,8 +109,10 @@ aktualisiert werden.
   nächster Trigger erzwingt Retry.
 - **`input_datetime` ungültig/falsch konfiguriert (nur Zeit, kein Datum):**
   `has_date`/`has_time`-Guard fängt das ab → behandelt wie "Keepalive abgelaufen".
-- **`keepalive_seconds` Fehlkonfiguration:** Selector-Max von 280 verhindert Werte
-  über dem 300s-Hersteller-Limit.
+- **`keepalive_seconds` Fehlkonfiguration:** Selector-Max von 200 (siehe Nachtrag
+  unten — ursprünglich 280, nach finalem Review wegen Tick-Granularität gesenkt)
+  verhindert Werte, die in Kombination mit dem `/1`-Keepalive-Tick über das
+  300s-Hersteller-Limit hinaus könnten.
 
 ## Doku & Versionierung
 
@@ -129,3 +131,55 @@ aktualisiert werden.
 
 - Mode-spezifische Register (40149, 41259, 40236) — keine Änderung.
 - Capability-Schicht, `sma_sbs_adapter.yaml` — andere Roadmap-Punkte, unabhängig.
+
+## Nachtrag (2026-06-30): Fixes aus dem finalen Whole-Branch-Review
+
+Der finale Review nach Implementierung der Tasks 1–5 fand drei Probleme, von zwei
+unabhängigen Gegenchecks (Opus-Subagent + Codex) bestätigt:
+
+**1. Critical — Keepalive-Garantie durch Tick-Granularität ausgehebelt.** Der
+`write_needed`-Gate wird nur bei Trigger-Feuern neu evaluiert. Einziger periodischer
+Wecker bei stabilen Werten war der bestehende `/4`-Minuten-Tick (240s). Die
+tatsächliche Schreib-Lücke kann dadurch auf `keepalive_s + 240s` anwachsen (bei
+Default 180s → bis ~420s, bei dem ursprünglichen Selector-Max 280s → bis ~520s) —
+über dem 300s-Hersteller-Limit. Der alte Code (vor Write-on-Change) schrieb bei
+jedem 240s-Tick unconditional und garantierte damit eine Obergrenze von 240s; das
+neue Feature konnte diese Sicherheitseigenschaft verletzen.
+
+**Fix:** Ein zusätzlicher, feinerer periodischer Trigger `minutes: /1` mit
+`id: keepalive_check` wird ergänzt (der bestehende `/4`-Tick bleibt zusätzlich
+bestehen, da Register 40151 außerhalb des Gates seinen eigenen Keepalive über diesen
+Tick braucht). Eine neue Skip-Condition im `conditions:`-Block
+(`{{ not (trigger.id == 'keepalive_check' and not write_needed) }}`) sorgt dafür,
+dass ein `/1`-Tick, bei dem nichts fällig ist, den **gesamten** Automation-Lauf
+abbricht, bevor überhaupt 40151 geschrieben wird — dadurch bleibt die Modbus-Last
+niedrig, obwohl der Tick häufiger feuert. `keepalive_seconds`-Selector-Max wird von
+280 auf 200 gesenkt: Worst-Case-Lücke `200 + 60 = 260s`, plus ~6s Schreibsequenz ≈
+266s, mit ausreichend Marge unter dem 300s-Limit.
+
+**2. Important — BMS-Wertregister werden nach einem "schnell Laden/Entladen"-Ausflug
+nicht zwangsweise neu geschrieben.** Dieselbe Problemklasse wie der ursprünglich für
+40151 gefundene Bug (Scope-Abschnitt oben), aber nie auf die fünf Wertregister
+angewendet: Diese Branches schreiben nur 40151/40149 und `stop:`en, ohne die
+BMS-Wertregister zu berühren. Kehrt man zu einem Standardpfad-Modus zurück und der
+Snapshot ist zufällig identisch zum letzten gespeicherten UND der Keepalive ist noch
+nicht abgelaufen, werden die Wertregister nicht neu geschrieben — obwohl unklar ist,
+ob der WR sie während der 802-Phase intern verwirft (unverifizierte
+Hardware-Annahme, daher Important statt Critical).
+
+**Fix:** In beiden Branches wird vor `stop:` der Snapshot-Helfer geleert
+(`input_text.set_value` mit `value: ""`), was beim nächsten Standardpfad-Lauf einen
+garantierten Snapshot-Mismatch und damit einen Rewrite erzwingt — spätestens beim
+nächsten `/1`-Tick (&lt;60s später).
+
+**3. Important — Fehler-Spam bei fehlenden Helfern auf unmigrierten Systemen.** Die
+CHANGELOG-Doku verspricht einen sauberen Fallback für Nutzer, die die neuen Helfer
+noch nicht angelegt haben; die `input_datetime.set_datetime`/`input_text.set_value`-
+Aufrufe zielen aber auf nicht existierende Entities, was zu wiederholten
+Fehlermeldungen führen kann.
+
+**Fix:** Alle Helfer-Update-Aktionen (im Standardpfad-Gate sowie die neue
+Snapshot-Invalidierung in Fix 2) bekommen `continue_on_error: true` — verhindert,
+dass ein fehlender Helfer die Sequenz abbricht oder Fehler eskaliert. Fail-safe-
+Richtung: schlägt das Update fehl, bleibt der alte Timestamp/Snapshot stehen →
+`write_needed` bleibt eher `true` → tendenziell mehr statt weniger Writes.

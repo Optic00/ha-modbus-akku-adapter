@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Bestehende v1.1.0-Importe dürfen beim Update nicht brechen → alle neuen Inputs brauchen Defaults (siehe Spec, Abschnitt „State-Storage").
-- Hersteller-Limit für die BMS-Register: max. alle 300s schreiben (`docs/modbus-register-referenz.md:112`) → `keepalive_seconds`-Selector-Max bleibt bei 280.
+- Hersteller-Limit für die BMS-Register: max. alle 300s schreiben (`docs/modbus-register-referenz.md:112`) → `keepalive_seconds`-Selector-Max ist **200** (nach dem Nachtrag vom finalen Review — ursprünglich 280, aber das ließ in Kombination mit dem `/4`-Tick eine Lücke von bis zu ~520s zu; siehe Task 6).
 - Register 40151 wird **immer** unconditional geschrieben, niemals Teil des Write-on-Change-Gates (siehe Spec, Abschnitt „Scope").
 - Snapshot-Format: Pipe-getrennter String aus den vier berechneten Werten + fixer `0` für 40801: `"{{ v_40793 }}|{{ v_40795 }}|{{ v_40797 }}|{{ v_40799 }}|0"`.
 - `mode: single` bleibt unverändert (kein `restart`/`queued`).
@@ -545,7 +545,193 @@ EOF
 
 ---
 
-### Task 6: Manuelle Verifikation (Live-System)
+### Task 6: Sicherheitsfixes aus finalem Review
+
+**Files:**
+- Modify: `blueprints/automation/akku_adapter/sma_stp_se_adapter.yaml`
+
+**Interfaces:**
+- Consumes: `write_needed`, `snapshot_helper`, `timestamp_helper` aus Task 3; die Branches "Wenn Akku schnell Laden"/"Wenn Akku schnell Entladen" aus Task 4 (unverändert sonst); die Helfer-Update-Aktionen im Standardpfad-Gate aus Task 4.
+
+Hintergrund: Der finale Whole-Branch-Review (nach Task 5) fand eine Critical- und
+zwei Important-Regressionen, von Opus- und Codex-Gegenchecks bestätigt und deren
+Fix-Design ebenfalls von beiden verifiziert (siehe Spec-Nachtrag vom 2026-06-30).
+Diese Task setzt das verifizierte Fix-Design um.
+
+- [ ] **Step 1: Neuen Keepalive-Tick-Trigger ergänzen**
+
+Füge im `triggers:`-Block, nach dem bestehenden `minutes: /4`-Eintrag und vor dem
+`event: start`-Eintrag, folgenden neuen Trigger ein:
+
+```yaml
+  - minutes: /1
+    trigger: time_pattern
+    id: keepalive_check
+```
+
+- [ ] **Step 2: Skip-Condition ergänzen**
+
+Ändere den `conditions:`-Block von:
+
+```yaml
+conditions:
+  - condition: state
+    entity_id: !input inverter_status_sensor
+    state: "Ok"
+```
+
+zu:
+
+```yaml
+conditions:
+  - condition: state
+    entity_id: !input inverter_status_sensor
+    state: "Ok"
+  - condition: template
+    value_template: "{{ not (trigger.id == 'keepalive_check' and not write_needed) }}"
+```
+
+Diese Bedingung lässt den gesamten Automation-Lauf nur dann abbrechen, wenn er vom
+neuen `/1`-Tick ausgelöst wurde UND nichts zu schreiben ansteht — alle anderen
+Trigger (State-Change, `/4`-Tick, HA-Start) sind davon unberührt, weil
+`trigger.id == 'keepalive_check'` für sie nie wahr ist.
+
+- [ ] **Step 3: `keepalive_seconds`-Selector-Max senken**
+
+In den Blueprint-Inputs (aus Task 1), ändere im `keepalive_seconds`-Input:
+
+```yaml
+      selector:
+        number:
+          min: 30
+          max: 280
+          step: 10
+          unit_of_measurement: s
+          mode: box
+```
+
+zu (nur `max` ändert sich, von `280` auf `200`):
+
+```yaml
+      selector:
+        number:
+          min: 30
+          max: 200
+          step: 10
+          unit_of_measurement: s
+          mode: box
+```
+
+Passe auch die `description:` des Inputs an: "Default 180s lässt Sicherheitsmarge."
+bleibt korrekt (180 < 200), keine Änderung nötig dort.
+
+- [ ] **Step 4: Snapshot-Invalidierung in "Wenn Akku schnell Laden" ergänzen**
+
+In der `then:`-Liste der `alias: Wenn Akku schnell Laden`-Branch, füge direkt vor
+`- stop: fertig` folgende Aktion ein:
+
+```yaml
+      - action: input_text.set_value
+        continue_on_error: true
+        target:
+          entity_id: "{{ snapshot_helper }}"
+        data:
+          value: ""
+```
+
+- [ ] **Step 5: Snapshot-Invalidierung in "Wenn Akku schnell Entladen" ergänzen**
+
+Identische Aktion, direkt vor dem `- stop: fertig` der `alias: Wenn Akku schnell
+Entladen`-Branch:
+
+```yaml
+      - action: input_text.set_value
+        continue_on_error: true
+        target:
+          entity_id: "{{ snapshot_helper }}"
+        data:
+          value: ""
+```
+
+- [ ] **Step 6: `continue_on_error` an den bestehenden Helfer-Updates ergänzen**
+
+Im Standardpfad-Gate (aus Task 4), ändere die beiden bestehenden Aktionen von:
+
+```yaml
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: "{{ timestamp_helper }}"
+        data:
+          timestamp: "{{ now().timestamp() }}"
+      - action: input_text.set_value
+        target:
+          entity_id: "{{ snapshot_helper }}"
+        data:
+          value: "{{ current_snapshot }}"
+```
+
+zu:
+
+```yaml
+      - action: input_datetime.set_datetime
+        continue_on_error: true
+        target:
+          entity_id: "{{ timestamp_helper }}"
+        data:
+          timestamp: "{{ now().timestamp() }}"
+      - action: input_text.set_value
+        continue_on_error: true
+        target:
+          entity_id: "{{ snapshot_helper }}"
+        data:
+          value: "{{ current_snapshot }}"
+```
+
+- [ ] **Step 7: YAML-Syntax validieren**
+
+Run: `python3 << 'PYEOF'
+import yaml
+def input_constructor(loader, node):
+    return f"!input {node.value}"
+yaml.add_constructor('!input', input_constructor, Loader=yaml.SafeLoader)
+with open('blueprints/automation/akku_adapter/sma_stp_se_adapter.yaml') as f:
+    yaml.safe_load(f)
+print("OK")
+PYEOF`
+Expected: `OK`
+
+- [ ] **Step 8: Scope-Diff prüfen**
+
+Run: `git diff` gegen den vorherigen Commit und bestätige: nur die in Steps 1-6
+genannten Stellen geändert (neuer Trigger, neue Condition, `max: 200`, zwei neue
+Snapshot-Invalidierungs-Aktionen, vier `continue_on_error: true`-Ergänzungen).
+Nichts an den Registerwerten, Delays oder der Schreibreihenfolge geändert.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add blueprints/automation/akku_adapter/sma_stp_se_adapter.yaml
+git commit -m "$(cat <<'EOF'
+sma_stp_se: Sicherheitsfixes aus finalem Review (Keepalive-Luecke, BMS-Register nach Schnellmodus, Fehler-Spam)
+
+Critical: /1-Keepalive-Tick mit Skip-Bedingung schliesst die Luecke, die der
+reine /4-Tick + Write-on-Change-Gate aufreissen konnte (bis zu ~520s statt
+300s-Limit). keepalive_seconds-Max von 280 auf 200 gesenkt.
+
+Important: Snapshot-Invalidierung in schnell-Laden/Entladen erzwingt Rewrite
+der BMS-Wertregister nach Rueckkehr in den Standardpfad. continue_on_error
+an allen Helfer-Updates verhindert Fehler-Spam bei fehlenden Helfern auf
+unmigrierten Systemen.
+
+Design von Opus-Subagent und Codex CLI unabhaengig verifiziert, siehe
+docs/superpowers/specs/2026-06-30-write-on-change-design.md (Nachtrag).
+EOF
+)"
+```
+
+---
+
+### Task 7: Manuelle Verifikation (Live-System)
 
 **Files:** keine Code-Änderungen — reine Verifikationsschritte.
 
@@ -597,12 +783,33 @@ sinnvollen Wert (z. B. 180) zurücksetzen.
 
 Modus auf "Akku schnell Laden" setzen (schreibt 40151→802, 40149), dann zurück auf
 "Akku Automatisch". Prüfen, dass 40151 zuverlässig auf 803 zurückgesetzt wird —
-unabhängig davon, ob die 5 Wertregister sich geändert haben oder nicht.
+unabhängig davon, ob die 5 Wertregister sich geändert haben oder nicht. Zusätzlich
+(Fix aus Task 6): nach der Rückkehr im Log prüfen, dass die 5 BMS-Wertregister
+tatsächlich neu geschrieben werden (Snapshot wurde beim Verlassen von "schnell
+Laden" invalidiert) — nicht nur 40151.
 
 - [ ] **Step 8: HA-Neustart-Verhalten prüfen**
 
 HA neu starten. Prüfen, dass beim Start-Trigger immer geschrieben wird (alle 6
 Register im Log), unabhängig vom Keepalive-Zustand der Helfer.
+
+- [ ] **Step 8b: Keepalive-Obergrenze über zwei `/4`-Ticks hinweg prüfen (Fix aus Task 6)**
+
+Ein überwachter Wert ändern (Snapshot+Timestamp werden aktualisiert), danach
+mindestens 8–10 Minuten lang nichts mehr ändern. Im Log/Logbook prüfen, dass die
+tatsächliche Lücke zwischen zwei BMS-Register-Schreibvorgängen (40793–40801) nie
+über die `keepalive_seconds`-Einstellung plus ~60s (`/1`-Tick-Intervall) hinausgeht
+— insbesondere NICHT bis zum nächsten `/4`-Tick (240s) warten muss. Bestätigt, dass
+der neue `/1`-Keepalive-Check tatsächlich greift und nicht durch die Skip-Condition
+dauerhaft blockiert wird.
+
+- [ ] **Step 8c: Fehlende Helfer simulieren (Fix aus Task 6)**
+
+Testweise einen der beiden neuen Helfer (`input_text`/`input_datetime`) löschen
+oder umbenennen, Automation auslösen. Prüfen: die Modbus-Writes laufen weiterhin
+durch (kein Abbruch der Sequenz), im HA-Log erscheint höchstens eine Warnung, aber
+kein wiederholter Fehler, der die Automation insgesamt fehlschlagen lässt. Helfer
+danach wiederherstellen.
 
 - [ ] **Step 9: Bei Erfolg — push**
 
