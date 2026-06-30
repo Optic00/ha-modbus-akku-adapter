@@ -33,6 +33,19 @@ den Fallback "Keepalive abgelaufen" und schreibt wie bisher bei jedem Trigger.
 - Bei HA-Start wird das Gate bewusst umgangen (immer geschrieben) — wie bisher,
   unabhängig vom Keepalive-Zustand, da der tatsächliche WR-Zustand nach einem
   Neustart unbekannt ist.
+- **Zusätzlicher `/1`-Minuten-Keepalive-Check**: der bisherige `/4`-Minuten-Tick
+  allein hätte die Schreib-Lücke bei stabilen Werten auf bis zu `keepalive_seconds +
+  240s` anwachsen lassen können — über dem 300s-Hersteller-Limit. Ein feinerer Tick
+  prüft jetzt jede Minute, ob der Keepalive abgelaufen ist, bricht den Lauf aber
+  sofort ab (kein Modbus-Write), wenn nichts ansteht. `keepalive_seconds`-Max
+  deshalb von 280s auf 200s gesenkt (Worst-Case-Lücke jetzt ~266s).
+- Nach „Akku schnell Laden"/„Akku schnell Entladen" wird beim nächsten
+  Standardpfad-Lauf zwangsweise neu geschrieben (Snapshot wird beim Verlassen
+  dieser Modi invalidiert) — verhindert, dass die BMS-Wertregister nach dem
+  Fremdsteuerungs-Ausflug fälschlich als „unverändert" übersprungen werden.
+- Helfer-Updates laufen jetzt mit `continue_on_error`, damit ein noch fehlender
+  Helfer (z. B. direkt nach dem Update, bevor die neuen Helfer angelegt wurden)
+  nicht zu wiederholten Fehlermeldungen führt.
 
 ## [1.1.0] – 2026-06-29 — Adapter `sma_stp_se`: 0.2C automatisch
 
