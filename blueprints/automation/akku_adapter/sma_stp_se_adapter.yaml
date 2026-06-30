@@ -66,6 +66,43 @@ blueprint:
         entity:
           domain: input_select
 
+    last_write_value_helper:
+      name: "Helfer: Letzter Schreibwert (Write-on-Change)"
+      description: >
+        input_text-Helfer, der den Snapshot der zuletzt geschriebenen BMS-Wertregister
+        speichert (40793/40795/40797/40799/40801). Wird vom Adapter automatisch
+        gepflegt, nicht manuell setzen. Siehe examples/akkusteuerung_helpers.example.yaml.
+      default: input_text.akkusteuerung_modbus_letzter_schreibwert
+      selector:
+        entity:
+          domain: input_text
+
+    last_write_time_helper:
+      name: "Helfer: Letzter Schreibzeitpunkt (Write-on-Change)"
+      description: >
+        input_datetime-Helfer (Datum + Uhrzeit), der den Zeitpunkt des letzten
+        tatsächlichen BMS-Register-Schreibvorgangs speichert. Wird vom Adapter
+        automatisch gepflegt. Siehe examples/akkusteuerung_helpers.example.yaml.
+      default: input_datetime.akkusteuerung_modbus_letzter_schreibzeitpunkt
+      selector:
+        entity:
+          domain: input_datetime
+
+    keepalive_seconds:
+      name: "Keepalive-Intervall (Sekunden)"
+      description: >
+        Maximales Intervall, nach dem die BMS-Wertregister (40793-40801) auch ohne
+        Wertänderung erneut geschrieben werden (sonst läuft die SMA-Fremdsteuerung
+        aus). Hersteller-Limit: 300s. Default 180s lässt Sicherheitsmarge.
+      default: 180
+      selector:
+        number:
+          min: 30
+          max: 280
+          step: 10
+          unit_of_measurement: s
+          mode: box
+
 variables:
   # !input ist in Jinja nicht direkt verfügbar – erst als Variable exponieren.
   dyn_charge_entity: !input dynamic_charge_strength_sensor
