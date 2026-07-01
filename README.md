@@ -1,9 +1,9 @@
 # ha-modbus-akku-adapter
 
-Dünne **Hardware-Adapter** (Home-Assistant-Blueprints), die einen abstrakten
-Steuer-**Modus** in konkrete **Modbus-Register-Schreibvorgänge** für Batterie-Hybrid-
-Wechselrichter übersetzen. Aktuell: **SMA STP SE Hybrid**. Geplant: **SMA SBS**, später
-andere Marken (z. B. Huawei).
+**Home-Assistant-Blueprints**, die einen abstrakten Steuerungs-**Modus** in die jeweils
+passenden **Modbus-Register-Schreibbefehle** für verschiedene Batterie-Hybrid-Wechselrichter
+übersetzen. Aktuell **SMA STP SE Hybrid**, geplant **SMA SBS** und später weitere Hersteller
+wie Huawei.
 
 > 🎯 **Idee:** Strategie (wann soll geladen/entladen werden) und Hardware-Ansteuerung
 > (wie wird es am konkreten WR umgesetzt) sind getrennt. Wer schon eine **eigene
@@ -62,8 +62,9 @@ Die Beispieldatei bringt auch den Sensor **Batterie-Nennkapazität** (Register 4
 Daraus berechnet der Adapter den Modus „Akku 0.2C Laden" automatisch (0,2 × Kapazität) –
 du musst dafür **nichts** von Hand eintragen.
 
-> ℹ️ Modbus-Steuerung ohne Grid-Guard-Code setzt je nach Gerät deaktivierte Updates oder
-> Beta-Firmware (ab ca. 3.06.xx) voraus – siehe Kommentar in der Beispieldatei.
+> ℹ️ Seit Mitte 2025 reicht aktuelle, offizielle WR-Firmware (ab ca. 3.06.xx) — kein Beta,
+> kein Grid Guard Code mehr nötig. Bei sehr alten, nicht aktualisierten Firmware-Ständen
+> zuerst ein reguläres Update einspielen.
 
 ### Schritt 2 – Helfer anlegen (über die Oberfläche)
 

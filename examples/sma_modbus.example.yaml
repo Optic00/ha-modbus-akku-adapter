@@ -6,8 +6,8 @@
 # ⚙️  ANPASSEN:
 #   host: IP-Adresse des Wechselrichters im lokalen Netz
 #
-# Voraussetzung: Modbus-Steuerung ohne Grid Guard Code benötigt entweder
-#   deaktivierte Updates oder Beta-Firmware (ab ca. 3.06.xx).
+# Voraussetzung: aktuelle, offizielle WR-Firmware (ab ca. 3.06.xx) — kein Beta,
+#   kein Grid Guard Code mehr nötig (seit Mitte 2025).
 # =============================================================================
 
 modbus:
