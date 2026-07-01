@@ -165,8 +165,7 @@ geht es schneller als per GUI.
 > ⚠️ **Nur verwenden, wenn du `ha-opti-akkusteuerung` NICHT nutzt:** Das Opti-Repo liefert
 > Modus-Dropdown, die 6 Leistungs-Helfer und die 2 Write-on-Change-Helfer bereits über
 > `packages/sma_helpers.yaml` (siehe [„Wer liefert was"](#wer-liefert-was--und-in-welcher-reihenfolge)
-> oben). Zwei Packages mit derselben Entity-ID führen zu stillem Überschreiben durch HA's
-> Package-Merge, nicht zu einem Fehler. Wer beide Repos zusammen nutzt: nur die
+> oben). Zwei Packages mit derselben Entity-ID führen zu einem Duplicate-Key-Fehler im HA-Log, und eine der beiden Definitionen wird verworfen — leicht zu übersehen, wenn man die Logs nicht prüft. Wer beide Repos zusammen nutzt: nur die
 > `sma_helpers.yaml` aus dem Opti-Repo aktivieren, hier nichts zusätzlich einbinden.
 
 ### Schritt 3 – Strategie, die das Dropdown umschaltet
