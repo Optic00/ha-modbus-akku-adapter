@@ -38,6 +38,19 @@ Probleme & Hinweise" für die volle Root-Cause-Analyse.
   den echten Sollwert nach Fensterablauf.
 - Regressionstest (Pause + Schnell Laden/Entladen bei 500/1000/2000 W): unauffällig.
 
+## [1.4.0] – 2026-07-01 — Adapter `sma_stp_se`: kanonischer Sensor-Default
+
+Additives MINOR-Release (Contract unverändert). Der Default-Wert des Inputs
+`dynamic_charge_strength_sensor` wechselt von `sensor.akkusteuerung_dynamische_ladestaerke`
+auf den kanonischen Namen `sensor.opti_charge_power_w` (siehe `ha-opti-akkusteuerung`
+Canonical-Layer). **Nicht-breaking:** Home Assistant speichert den beim Blueprint-Import
+gewählten Wert pro Automations-Instanz — bestehende Automationen sind von der
+Default-Änderung nicht betroffen, nur Neuimporte sehen den neuen Vorschlagswert.
+
+### Geändert
+- Blueprint-Input `dynamic_charge_strength_sensor`: Default auf `sensor.opti_charge_power_w`,
+  Beschreibungstext ergänzt (kanonischer Name bei Nutzung von `ha-opti-akkusteuerung`).
+
 ## [1.2.0] – 2026-06-30 — Adapter `sma_stp_se`: Write-on-Change
 
 Additives MINOR-Release (Contract unverändert, neue Inputs haben Defaults). Wer
