@@ -12,6 +12,32 @@ unabhängig weiterentwickelt werden können (Versions-Skew vermeiden).
 - `sma_sbs_adapter.yaml` (abweichendes Register-Map, gleicher Contract).
 - Capability-Schicht (Adapter meldet Fähigkeiten) – erst mit erstem Nicht-SMA-Adapter.
 
+## [1.3.0] – 2026-07-01 — Adapter `sma_stp_se`: Ladeleistungs-Spike nach Moduswechsel behoben
+
+Additives MINOR-Release (Contract unverändert, keine neuen Inputs). Live beobachtet
+und 2x reproduziert: nach längerer Verweildauer in einem Forced-Modus ("nur Entladen")
+lädt der WR beim Rücksprung auf "Dynamisch" für ~2:20–2:50 Min mit nahezu Nennleistung
+statt dem Sollwert — siehe `docs/modbus-register-referenz.md` Abschnitt "Bekannte
+Probleme & Hinweise" für die volle Root-Cause-Analyse.
+
+### Geändert
+- **Moduswechsel erzwingt sofortigen Rewrite der BMS-Leistungsgrenzen**
+  (40793/40795/40797/40799/40801): der Modus ist jetzt Teil von `current_snapshot`,
+  wodurch jeder Wechsel `write_needed` sofort auslöst, statt bis zum nächsten
+  Write-on-Change/Keepalive-Zyklus zu warten.
+- **Defensiver Sicherheits-Deckel (500 W)** auf die Ladeleistungsgrenze für die ersten
+  330s (5:30 Min) nach jedem Eintritt in "Dynamisch", danach automatischer Rücksprung
+  auf den echten Sollwert.
+- **Registeradresse für "Dynamisch"**: `CmpBMS.OpMod` wird jetzt konsistent über 41259
+  (Sunspec) geschrieben statt über die bisherige Alternative 40236 — wie die anderen
+  3 Modi und wie in der offiziellen SMA-Support-Antwort dokumentiert.
+
+### Verifiziert
+- Live auf Produktivanlage (STP SE 10.0 + BYD HVS 12.8): Ladeleistung blieb im
+  kritischen Fenster durchgehend ≤625 W (vorher bis 10.748 W), sauberer Übergang auf
+  den echten Sollwert nach Fensterablauf.
+- Regressionstest (Pause + Schnell Laden/Entladen bei 500/1000/2000 W): unauffällig.
+
 ## [1.2.0] – 2026-06-30 — Adapter `sma_stp_se`: Write-on-Change
 
 Additives MINOR-Release (Contract unverändert, neue Inputs haben Defaults). Wer
