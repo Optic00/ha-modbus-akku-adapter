@@ -106,7 +106,7 @@ input_number:
 # strategieabhängig):
 #
 # 1) Sensor "Dynamische Ladestärke" (Watt)
-#    Blueprint-Default: sensor.akkusteuerung_dynamische_ladestaerke
+#    Blueprint-Default: sensor.opti_charge_power_w
 #    Liefert die gewünschte Ladeleistung. Kommt von deiner STRATEGIE – z. B. aus
 #    dem Schwesterprojekt ha-opti-akkusteuerung – oder du baust einen eigenen
 #    (Template-)Sensor, der schlicht eine Watt-Zahl ausgibt.

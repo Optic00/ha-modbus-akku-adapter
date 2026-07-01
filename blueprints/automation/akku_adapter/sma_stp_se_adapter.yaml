@@ -37,9 +37,11 @@ blueprint:
     dynamic_charge_strength_sensor:
       name: Sensor "Dynamische Ladestärke"
       description: >
-        Template-Sensor mit der berechneten dynamischen Ladestärke.
-        Wird durch sma_templates.yaml bereitgestellt.
-      default: sensor.akkusteuerung_dynamische_ladestaerke
+        Template-Sensor mit der berechneten dynamischen Ladestärke, in Watt.
+        Kanonischer Name bei Nutzung von ha-opti-akkusteuerung:
+        sensor.opti_charge_power_w. Bei eigener Strategie: eigenen Watt-Sensor
+        eintragen.
+      default: sensor.opti_charge_power_w
       selector:
         entity:
           domain: sensor

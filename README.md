@@ -1,9 +1,9 @@
 # ha-modbus-akku-adapter
 
-Dünne **Hardware-Adapter** (Home-Assistant-Blueprints), die einen abstrakten
-Steuer-**Modus** in konkrete **Modbus-Register-Schreibvorgänge** für Batterie-Hybrid-
-Wechselrichter übersetzen. Aktuell: **SMA STP SE Hybrid**. Geplant: **SMA SBS**, später
-andere Marken (z. B. Huawei).
+**Home-Assistant-Blueprints**, die einen abstrakten Steuerungs-**Modus** in die jeweils
+passenden **Modbus-Register-Schreibbefehle** für verschiedene Batterie-Hybrid-Wechselrichter
+übersetzen. Aktuell **SMA STP SE Hybrid**, geplant **SMA SBS** und später weitere Hersteller
+wie Huawei.
 
 > 🎯 **Idee:** Strategie (wann soll geladen/entladen werden) und Hardware-Ansteuerung
 > (wie wird es am konkreten WR umgesetzt) sind getrennt. Wer schon eine **eigene
@@ -46,6 +46,40 @@ Strategie  →  input_select.akkusteuerung_modus  →  [ DIESES BLUEPRINT ]  →
 (setzt Modus)        (+ input_number.* in W)            übersetzt
 ```
 
+### Wer liefert was — und in welcher Reihenfolge?
+
+| Kommt aus | Was | GUI oder YAML |
+|---|---|---|
+| Adapter-Repo | Modbus-Hub zum WR | YAML (`configuration.yaml`/Package) |
+| Adapter-Repo (**oder** Opti-Repo, siehe unten) | Modus-Dropdown + 6 Leistungs-Helfer | GUI oder YAML (Package) |
+| Adapter-Repo (**oder** Opti-Repo, siehe unten) | 2 Write-on-Change-Helfer (`input_text`/`input_datetime`) | GUI oder YAML (Package) |
+| Adapter-Repo | Blueprint (übersetzt Modus → Modbus) | Blueprint-Import |
+| Opti-Repo | `opti_mapping.yaml` (Hardware → kanonische Sensoren) | YAML, von dir ausgefüllt |
+| Opti-Repo | `opti_derived.yaml` (Score, Ziel-SoC, Preisniveau) | YAML (Package) |
+| Opti-Repo | Strategie-Automation (setzt den Modus) | YAML (editierbar, kein Blueprint) |
+
+**Verbindliche Reihenfolge, wenn du beide Repos zusammen nutzt:**
+
+1. Modbus-Verbindung anlegen (Adapter-Repo, Schritt 1). Helfer NICHT hier anlegen, wenn du Schritt 2 nutzt — siehe Hinweis unten.
+2. Opti-Packages aktivieren + `opti_mapping.yaml` ausfüllen (Opti-Repo)
+3. Home Assistant neu starten — `sensor.opti_*` prüfen
+4. Adapter-Blueprint importieren, Inputs auf `sensor.opti_charge_power_w` /
+   `sensor.opti_target_soc` setzen (nicht ungeprüft die Blueprint-Vorschlagswerte
+   übernehmen, falls sie abweichen)
+5. Strategie-Automation (`automations/opti_strategie.yaml`) aktivieren
+
+> ⚠️ **Helfer nur aus einer Quelle:** Bei kombinierter Nutzung liefert
+> `ha-opti-akkusteuerung/packages/sma_helpers.yaml` bereits alle Helfer (Modus-Dropdown,
+> 6 Leistungs-Helfer, 2 Write-on-Change-Helfer). Die Adapter-GUI-Anleitung bzw. das
+> Adapter-Package dann NICHT zusätzlich verwenden — zwei Packages mit denselben
+> Entity-IDs führen zu einem Duplicate-Key-Fehler im HA-Log. Nutzt du den Adapter
+> **ohne** das Opti-Repo (eigene Strategie), gilt die Adapter-Anleitung normal.
+
+```
+Strategie  →  input_select.akkusteuerung_modus  →  [ ADAPTER-BLUEPRINT ]  →  Modbus-Register  →  WR
+(setzt Modus)        (+ input_number.* in W)              übersetzt
+```
+
 ---
 
 ## Einrichtung – Schritt für Schritt
@@ -62,8 +96,9 @@ Die Beispieldatei bringt auch den Sensor **Batterie-Nennkapazität** (Register 4
 Daraus berechnet der Adapter den Modus „Akku 0.2C Laden" automatisch (0,2 × Kapazität) –
 du musst dafür **nichts** von Hand eintragen.
 
-> ℹ️ Modbus-Steuerung ohne Grid-Guard-Code setzt je nach Gerät deaktivierte Updates oder
-> Beta-Firmware (ab ca. 3.06.xx) voraus – siehe Kommentar in der Beispieldatei.
+> ℹ️ Seit Mitte 2025 reicht aktuelle, offizielle WR-Firmware (ab ca. 3.06.xx) — kein Beta,
+> kein Grid Guard Code mehr nötig. Bei sehr alten, nicht aktualisierten Firmware-Ständen
+> zuerst ein reguläres Update einspielen.
 
 ### Schritt 2 – Helfer anlegen (über die Oberfläche)
 
@@ -134,6 +169,12 @@ Auch hier gilt: per Copy-Paste aus
 [`examples/akkusteuerung_helpers.example.yaml`](examples/akkusteuerung_helpers.example.yaml)
 geht es schneller als per GUI.
 
+> ⚠️ **Nur verwenden, wenn du `ha-opti-akkusteuerung` NICHT nutzt:** Das Opti-Repo liefert
+> Modus-Dropdown, die 6 Leistungs-Helfer und die 2 Write-on-Change-Helfer bereits über
+> `packages/sma_helpers.yaml` (siehe [„Wer liefert was"](#wer-liefert-was--und-in-welcher-reihenfolge)
+> oben). Zwei Packages mit derselben Entity-ID führen zu einem Duplicate-Key-Fehler im HA-Log, und eine der beiden Definitionen wird verworfen — leicht zu übersehen, wenn man die Logs nicht prüft. Wer beide Repos zusammen nutzt: nur die
+> `sma_helpers.yaml` aus dem Opti-Repo aktivieren, hier nichts zusätzlich einbinden.
+
 ### Schritt 3 – Strategie, die das Dropdown umschaltet
 
 Irgendetwas muss `input_select.akkusteuerung_modus` setzen – sonst steht der Adapter still.
@@ -152,14 +193,14 @@ Modus-Select) haben sinnvolle Defaults – prüfe sie und passe sie bei abweiche
 Entity-Namen an.
 
 > 💡 **Stabile URL statt `main`:** Die Tabelle unten verlinkt auf den aktuellen Release-Tag
-> (`v1.3.0`), nicht auf den `main`-Branch. `main` kann zwischenzeitlich unfertige
+> (`v1.4.0`), nicht auf den `main`-Branch. `main` kann zwischenzeitlich unfertige
 > Zwischenstände enthalten. Für ein Update auf eine neue Version: Blueprint erneut mit der
 > URL des neuen Tags importieren (HA zeigt dann den Diff). Alle Releases: siehe
 > [CHANGELOG.md](CHANGELOG.md) bzw. [Tags](https://github.com/Optic00/ha-modbus-akku-adapter/tags).
 
-| WR-Familie | Blueprint | Raw-URL (Import, `v1.3.0`) | Status |
+| WR-Familie | Blueprint | Raw-URL (Import, `v1.4.0`) | Status |
 |---|---|---|---|
-| **SMA STP SE Hybrid** | `sma_stp_se_adapter.yaml` | `https://raw.githubusercontent.com/Optic00/ha-modbus-akku-adapter/v1.3.0/blueprints/automation/akku_adapter/sma_stp_se_adapter.yaml` | ✅ live getestet |
+| **SMA STP SE Hybrid** | `sma_stp_se_adapter.yaml` | `https://raw.githubusercontent.com/Optic00/ha-modbus-akku-adapter/v1.4.0/blueprints/automation/akku_adapter/sma_stp_se_adapter.yaml` | ✅ live getestet |
 | SMA SBS | `sma_sbs_adapter.yaml` | – | 🧪 geplant (Register-Map abweichend) |
 | Andere (z. B. Huawei) | – | – | 💬 offen |
 
