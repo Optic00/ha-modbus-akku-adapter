@@ -112,11 +112,26 @@ variables:
   keepalive_s: !input keepalive_seconds
   mode_select_entity: !input mode_select
   early_stop_modes: ['Akku Automatisch', 'Akku schnell Laden', 'Akku schnell Entladen']
-  v_40793: "{{ [states('input_number.akkusteuerung_min_ladestaerke') | int(0), states(dyn_charge_entity) | int(0)] | min }}"
-  v_40795: "{{ states(dyn_charge_entity) | int(0) }}"
+  # Einschwing-Schutz: nach einem Wechsel IN "Akku Dynamisch" hat der WR beobachtet
+  # (2x live reproduziert, 2026-07-01) bis zu ~5 Minuten eine unklare interne
+  # Ladeleistungsgrenze (vermutlich Drift auf Maximalwert waehrend "nur Entladen").
+  # Deckel die Ladeleistung in diesem Fenster defensiv auf einen sicheren Wert.
+  dynamisch_settling_seconds: 330
+  dynamisch_settling_cap_w: 500
+  dynamisch_settling: >-
+    {{ states(mode_select_entity) == 'Akku Dynamisch'
+       and (as_timestamp(now()) - as_timestamp(states[mode_select_entity].last_changed)) < dynamisch_settling_seconds }}
+  v_40793_raw: "{{ [states('input_number.akkusteuerung_min_ladestaerke') | int(0), states(dyn_charge_entity) | int(0)] | min }}"
+  v_40793: "{{ [v_40793_raw, dynamisch_settling_cap_w] | min if dynamisch_settling else v_40793_raw }}"
+  v_40795_raw: "{{ states(dyn_charge_entity) | int(0) }}"
+  v_40795: "{{ [v_40795_raw, dynamisch_settling_cap_w] | min if dynamisch_settling else v_40795_raw }}"
   v_40797: "{{ [states('input_number.akkusteuerung_min_entladestaerke') | int(0), states('input_number.akkusteuerung_max_entladestaerke') | int(0)] | min }}"
   v_40799: "{{ states('input_number.akkusteuerung_max_entladestaerke') | int(0) }}"
-  current_snapshot: "{{ [v_40793, v_40795, v_40797, v_40799, 0] | join('|') }}"
+  # Modus ist Teil des Snapshots: JEDER Moduswechsel macht current_snapshot
+  # unterschiedlich zum zuletzt gespeicherten Wert und erzwingt damit einen
+  # sofortigen Rewrite der BMS-Wertregister in derselben Ausfuehrung, statt bis
+  # zum naechsten Keepalive-Zyklus zu warten (bestaetigte Root-Cause-Komponente).
+  current_snapshot: "{{ [v_40793, v_40795, v_40797, v_40799, 0, states(mode_select_entity)] | join('|') }}"
   write_needed: >-
     {% set valid_dt = state_attr(timestamp_helper, 'has_date') and state_attr(timestamp_helper, 'has_time') %}
     {% set last_ts = as_timestamp(states(timestamp_helper), none) if valid_dt else none %}
@@ -392,7 +407,7 @@ actions:
           seconds: 1
       - data:
           hub: !input modbus_hub
-          address: 40236
+          address: 41259
           slave: 3
           value:
             - 0
