@@ -47,8 +47,9 @@ Adapter-Stil — z.B. `battery_capacity_sensor`):
   tatsächlichen Schreibvorgangs der 5 Wertregister — wird bei **jedem** Schreiben
   aktualisiert, auch reinen Keepalive-Writes ohne Wertänderung.
 - `keepalive_seconds` — `number`-Selector direkt im Blueprint (kein Helfer nötig,
-  reiner Konfigwert), Default `180`, `min`/`max: 280` (Sicherheitsmarge unter dem
-  300s-Hersteller-Limit), `step`, Einheit Sekunden.
+  reiner Konfigwert), Default `180`, `min: 30`/`max: 200` (Sicherheitsmarge unter
+  dem 300s-Hersteller-Limit — siehe Nachtrag 1 unten für die Begründung, warum
+  `max` von ursprünglich 280 auf 200 gesenkt wurde), `step`, Einheit Sekunden.
 
 Beide Helfer werden zusätzlich in `examples/akkusteuerung_helpers.example.yaml`
 ergänzt, damit Nutzer sie per Copy-Paste statt manuellem GUI-Anlegen bekommen.
