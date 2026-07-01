@@ -12,11 +12,13 @@ Strategie und Helfer bleiben unverändert.
 > wird geprüft, ob 1–2 Begriffe ergänzt werden müssen. Kein WR-Modell auf Vorrat.
 
 ## Rollen
-- **Strategie-Blueprint** (`sma_opti_automatik`): entscheidet anhand von Prognose,
+- **Strategie** (`automations/opti_strategie.yaml` im Repo `ha-opti-akkusteuerung`,
+  **kein Blueprint** — editierbare Automation): entscheidet anhand von Prognose,
   Preis und Ziel-SoC und **setzt** den Modus (`input_select.select_option`).
-- **Adapter-Blueprint** (`sma_manuelle_steuerung`): **liest** den Modus + Sollwerte
-  und übersetzt sie hardware-spezifisch (bei SMA: Modbus-Register).
-- Beide nehmen den Modus-Select als `!input mode_select` entgegen → wiederverwendbar.
+- **Adapter-Blueprint** (z. B. `sma_stp_se_adapter.yaml`): **liest** den Modus +
+  Sollwerte und übersetzt sie hardware-spezifisch (bei SMA: Modbus-Register).
+- Der Adapter nimmt den Modus-Select als `!input mode_select` entgegen → wiederverwendbar
+  für jede Strategie, die dasselbe `input_select` setzt.
 
 ## Modus-Vokabular (Contract)
 
@@ -34,8 +36,10 @@ Strategie und Helfer bleiben unverändert.
 ## Im Contract enthalten
 - Der Modus (Vokabular oben).
 - SoC-Grenzen: `input_number.minsoc`, `input_number.maxsoc`, Ziel via
-  `sensor.akku_target_soc_intelligent`.
-- Abstrakte Leistungswünsche in **Watt** (Lade-/Entlade-/Limit-Leistung).
+  `sensor.opti_target_soc` (kanonischer Name; bei `ha-opti-akkusteuerung`
+  in `packages/opti_derived.yaml` definiert).
+- Abstrakte Leistungswünsche in **Watt** (Lade-/Entlade-/Limit-Leistung), kanonisch
+  `sensor.opti_charge_power_w`.
 
 ## NICHT im Contract (gehört in den jeweiligen Adapter)
 - Konkrete Register (SMA: 40149/40151/40793–40801/41259), OpMod-Werte.
