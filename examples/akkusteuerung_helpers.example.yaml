@@ -32,6 +32,22 @@ input_select:
       - Akku schnell Entladen  # erzwungenes Entladen mit "Entladestärke Soll"
       - Akku 0.2C Laden        # Preset: 0,2 × Kapazität, automatisch (kein Helfer nötig)
 
+input_text:
+  # Speichert den Snapshot der zuletzt geschriebenen BMS-Wertregister
+  # (Write-on-Change, ab v1.2.0). Wird vom Adapter automatisch gepflegt,
+  # nicht manuell befuellen.
+  akkusteuerung_modbus_letzter_schreibwert:
+    name: Akkusteuerung Modbus Letzter Schreibwert
+    max: 255
+
+input_datetime:
+  # Zeitpunkt des letzten tatsaechlichen BMS-Register-Schreibvorgangs
+  # (Write-on-Change, ab v1.2.0). Wird vom Adapter automatisch gepflegt.
+  akkusteuerung_modbus_letzter_schreibzeitpunkt:
+    name: Akkusteuerung Modbus Letzter Schreibzeitpunkt
+    has_date: true
+    has_time: true
+
 input_number:
   # Alle Werte in WATT. Grenzen/Step nach eigener Anlage anpassen.
   akkusteuerung_ladestaerke_soll:        # für "Akku schnell Laden"

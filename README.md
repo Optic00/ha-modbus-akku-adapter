@@ -121,6 +121,19 @@ Template-Sensor, der einfach eine Watt-Zahl ausgibt.
 > als YAML in [`examples/akkusteuerung_helpers.example.yaml`](examples/akkusteuerung_helpers.example.yaml) –
 > dort sind die Entity-IDs garantiert korrekt.
 
+**e) Zwei Helfer für Write-on-Change (ab v1.2.0)** – der Adapter schreibt die
+BMS-Wertregister jetzt nur noch bei Änderung oder abgelaufenem Keepalive. Dafür
+braucht er zwei Helfer, die er selbst pflegt (nichts manuell eintragen):
+
+| Typ | Name eintippen | ergibt Entity-ID |
+|---|---|---|
+| „Text" | `Akkusteuerung Modbus Letzter Schreibwert` | `input_text.akkusteuerung_modbus_letzter_schreibwert` |
+| „Datum und Uhrzeit" | `Akkusteuerung Modbus Letzter Schreibzeitpunkt` | `input_datetime.akkusteuerung_modbus_letzter_schreibzeitpunkt` |
+
+Auch hier gilt: per Copy-Paste aus
+[`examples/akkusteuerung_helpers.example.yaml`](examples/akkusteuerung_helpers.example.yaml)
+geht es schneller als per GUI.
+
 ### Schritt 3 – Strategie, die das Dropdown umschaltet
 
 Irgendetwas muss `input_select.akkusteuerung_modus` setzen – sonst steht der Adapter still.

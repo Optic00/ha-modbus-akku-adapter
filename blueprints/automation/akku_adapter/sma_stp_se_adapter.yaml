@@ -66,10 +66,64 @@ blueprint:
         entity:
           domain: input_select
 
+    last_write_value_helper:
+      name: "Helfer: Letzter Schreibwert (Write-on-Change)"
+      description: >
+        input_text-Helfer, der den Snapshot der zuletzt geschriebenen BMS-Wertregister
+        speichert (40793/40795/40797/40799/40801). Wird vom Adapter automatisch
+        gepflegt, nicht manuell setzen. Siehe examples/akkusteuerung_helpers.example.yaml.
+      default: input_text.akkusteuerung_modbus_letzter_schreibwert
+      selector:
+        entity:
+          domain: input_text
+
+    last_write_time_helper:
+      name: "Helfer: Letzter Schreibzeitpunkt (Write-on-Change)"
+      description: >
+        input_datetime-Helfer (Datum + Uhrzeit), der den Zeitpunkt des letzten
+        tatsächlichen BMS-Register-Schreibvorgangs speichert. Wird vom Adapter
+        automatisch gepflegt. Siehe examples/akkusteuerung_helpers.example.yaml.
+      default: input_datetime.akkusteuerung_modbus_letzter_schreibzeitpunkt
+      selector:
+        entity:
+          domain: input_datetime
+
+    keepalive_seconds:
+      name: "Keepalive-Intervall (Sekunden)"
+      description: >
+        Maximales Intervall, nach dem die BMS-Wertregister (40793-40801) auch ohne
+        Wertänderung erneut geschrieben werden (sonst läuft die SMA-Fremdsteuerung
+        aus). Hersteller-Limit: 300s. Default 180s lässt Sicherheitsmarge.
+      default: 180
+      selector:
+        number:
+          min: 30
+          max: 200
+          step: 10
+          unit_of_measurement: s
+          mode: box
+
 variables:
   # !input ist in Jinja nicht direkt verfügbar – erst als Variable exponieren.
   dyn_charge_entity: !input dynamic_charge_strength_sensor
   capacity_entity: !input battery_capacity_sensor
+  snapshot_helper: !input last_write_value_helper
+  timestamp_helper: !input last_write_time_helper
+  keepalive_s: !input keepalive_seconds
+  mode_select_entity: !input mode_select
+  early_stop_modes: ['Akku Automatisch', 'Akku schnell Laden', 'Akku schnell Entladen']
+  v_40793: "{{ [states('input_number.akkusteuerung_min_ladestaerke') | int(0), states(dyn_charge_entity) | int(0)] | min }}"
+  v_40795: "{{ states(dyn_charge_entity) | int(0) }}"
+  v_40797: "{{ [states('input_number.akkusteuerung_min_entladestaerke') | int(0), states('input_number.akkusteuerung_max_entladestaerke') | int(0)] | min }}"
+  v_40799: "{{ states('input_number.akkusteuerung_max_entladestaerke') | int(0) }}"
+  current_snapshot: "{{ [v_40793, v_40795, v_40797, v_40799, 0] | join('|') }}"
+  write_needed: >-
+    {% set valid_dt = state_attr(timestamp_helper, 'has_date') and state_attr(timestamp_helper, 'has_time') %}
+    {% set last_ts = as_timestamp(states(timestamp_helper), none) if valid_dt else none %}
+    {{ trigger.id == 'ha_start'
+       or current_snapshot != states(snapshot_helper)
+       or last_ts is none
+       or (now().timestamp() - last_ts) > (keepalive_s | int(0)) }}
 
 triggers:
   - entity_id:
@@ -90,13 +144,22 @@ triggers:
   - minutes: /4
     trigger: time_pattern
 
+  - minutes: /1
+    trigger: time_pattern
+    id: keepalive_check
+
   - event: start
     trigger: homeassistant
+    id: ha_start
 
 conditions:
   - condition: state
     entity_id: !input inverter_status_sensor
     state: "Ok"
+  - condition: template
+    value_template: >-
+      {{ trigger.id != 'keepalive_check'
+         or (states(mode_select_entity) not in early_stop_modes and write_needed) }}
 
 actions:
   - alias: Wenn Akku Automatik
@@ -150,6 +213,12 @@ actions:
             - >-
               {{ 65535 - states('input_number.akkusteuerung_ladestaerke_soll') | int }}
         action: modbus.write_register
+      - action: input_text.set_value
+        continue_on_error: true
+        target:
+          entity_id: "{{ snapshot_helper }}"
+        data:
+          value: ""
       - stop: fertig
 
   - alias: Wenn Akku schnell Entladen
@@ -177,9 +246,15 @@ actions:
             - >-
               {{ states('input_number.akkusteuerung_entladestaerke_soll') | int }}
         action: modbus.write_register
+      - action: input_text.set_value
+        continue_on_error: true
+        target:
+          entity_id: "{{ snapshot_helper }}"
+        data:
+          value: ""
       - stop: fertig
 
-  # --- Standardpfad: Modbus-Basis-Parameter setzen ---
+  # --- Standardpfad: Fremdsteuerung aktivieren (immer, kein Write-on-Change) ---
   - data:
       hub: !input modbus_hub
       address: 40151
@@ -190,57 +265,73 @@ actions:
     action: modbus.write_register
   - delay:
       seconds: 1
-  - data:
-      hub: !input modbus_hub
-      address: 40793
-      slave: 3
-      value:
-        - 0
-        # Min-Ladestärke nie über die dynamische Max-Ladestärke (40795) → kein Min>Max an die BMS
-        - "{{ [states('input_number.akkusteuerung_min_ladestaerke') | int(0), states(dyn_charge_entity) | int(0)] | min }}"
-    action: modbus.write_register
-  - delay:
-      seconds: 1
-  - alias: Schreib die dynamische Ladestärke auf Modbus
-    data:
-      hub: !input modbus_hub
-      address: 40795
-      slave: 3
-      value:
-        - 0
-        - "{{ states(dyn_charge_entity) | int(0) }}"
-    action: modbus.write_register
-  - delay:
-      seconds: 1
-  - data:
-      hub: !input modbus_hub
-      address: 40797
-      slave: 3
-      value:
-        - 0
-        # Min-Entladestärke nie über die Max-Entladestärke (40799) → kein Min>Max an die BMS
-        - "{{ [states('input_number.akkusteuerung_min_entladestaerke') | int(0), states('input_number.akkusteuerung_max_entladestaerke') | int(0)] | min }}"
-    action: modbus.write_register
-  - delay:
-      seconds: 1
-  - data:
-      hub: !input modbus_hub
-      address: 40799
-      slave: 3
-      value:
-        - 0
-        - "{{ states('input_number.akkusteuerung_max_entladestaerke') | int }}"
-    action: modbus.write_register
-  - delay:
-      seconds: 1
-  - data:
-      hub: !input modbus_hub
-      address: 40801
-      slave: 3
-      value:
-        - 0
-        - 0
-    action: modbus.write_register
+
+  # --- BMS-Wertregister: nur bei Aenderung oder abgelaufenem Keepalive schreiben ---
+  - if:
+      - condition: template
+        value_template: "{{ write_needed }}"
+    then:
+      - data:
+          hub: !input modbus_hub
+          address: 40793
+          slave: 3
+          value:
+            - 0
+            - "{{ v_40793 }}"
+        action: modbus.write_register
+      - delay:
+          seconds: 1
+      - alias: Schreib die dynamische Ladestärke auf Modbus
+        data:
+          hub: !input modbus_hub
+          address: 40795
+          slave: 3
+          value:
+            - 0
+            - "{{ v_40795 }}"
+        action: modbus.write_register
+      - delay:
+          seconds: 1
+      - data:
+          hub: !input modbus_hub
+          address: 40797
+          slave: 3
+          value:
+            - 0
+            - "{{ v_40797 }}"
+        action: modbus.write_register
+      - delay:
+          seconds: 1
+      - data:
+          hub: !input modbus_hub
+          address: 40799
+          slave: 3
+          value:
+            - 0
+            - "{{ v_40799 }}"
+        action: modbus.write_register
+      - delay:
+          seconds: 1
+      - data:
+          hub: !input modbus_hub
+          address: 40801
+          slave: 3
+          value:
+            - 0
+            - 0
+        action: modbus.write_register
+      - action: input_datetime.set_datetime
+        continue_on_error: true
+        target:
+          entity_id: "{{ timestamp_helper }}"
+        data:
+          timestamp: "{{ now().timestamp() }}"
+      - action: input_text.set_value
+        continue_on_error: true
+        target:
+          entity_id: "{{ snapshot_helper }}"
+        data:
+          value: "{{ current_snapshot }}"
 
   - alias: Bei "Akku Pause"
     if:
