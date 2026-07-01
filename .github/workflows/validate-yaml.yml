@@ -1,0 +1,65 @@
+name: Validate YAML
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install PyYAML
+        run: pip install pyyaml
+
+      - name: Validate blueprint YAML (permissive !input tag)
+        run: |
+          python3 <<'PYEOF'
+          import sys
+          import glob
+          import yaml
+
+          def input_constructor(loader, node):
+              return f"!input {node.value}"
+
+          yaml.add_constructor("!input", input_constructor, Loader=yaml.SafeLoader)
+
+          failed = False
+          for path in sorted(glob.glob("blueprints/**/*.yaml", recursive=True)):
+              try:
+                  with open(path) as f:
+                      yaml.safe_load(f)
+                  print(f"OK   {path}")
+              except yaml.YAMLError as exc:
+                  print(f"FAIL {path}: {exc}")
+                  failed = True
+
+          sys.exit(1 if failed else 0)
+          PYEOF
+
+      - name: Validate example/config YAML (plain)
+        run: |
+          python3 <<'PYEOF'
+          import sys
+          import glob
+          import yaml
+
+          failed = False
+          for path in sorted(glob.glob("examples/**/*.yaml", recursive=True)):
+              try:
+                  with open(path) as f:
+                      yaml.safe_load(f)
+                  print(f"OK   {path}")
+              except yaml.YAMLError as exc:
+                  print(f"FAIL {path}: {exc}")
+                  failed = True
+
+          sys.exit(1 if failed else 0)
+          PYEOF

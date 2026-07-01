@@ -151,11 +151,33 @@ auswählen. Die Inputs (Hub-Name, Status-Sensor, **Batterie-Nennkapazität**, Dy
 Modus-Select) haben sinnvolle Defaults – prüfe sie und passe sie bei abweichenden
 Entity-Namen an.
 
-| WR-Familie | Blueprint | Raw-URL (Import) | Status |
+> 💡 **Stabile URL statt `main`:** Die Tabelle unten verlinkt auf den aktuellen Release-Tag
+> (`v1.2.0`), nicht auf den `main`-Branch. `main` kann zwischenzeitlich unfertige
+> Zwischenstände enthalten. Für ein Update auf eine neue Version: Blueprint erneut mit der
+> URL des neuen Tags importieren (HA zeigt dann den Diff). Alle Releases: siehe
+> [CHANGELOG.md](CHANGELOG.md) bzw. [Tags](https://github.com/Optic00/ha-modbus-akku-adapter/tags).
+
+| WR-Familie | Blueprint | Raw-URL (Import, `v1.2.0`) | Status |
 |---|---|---|---|
-| **SMA STP SE Hybrid** | `sma_stp_se_adapter.yaml` | `https://raw.githubusercontent.com/Optic00/ha-modbus-akku-adapter/main/blueprints/automation/akku_adapter/sma_stp_se_adapter.yaml` | ✅ live getestet |
+| **SMA STP SE Hybrid** | `sma_stp_se_adapter.yaml` | `https://raw.githubusercontent.com/Optic00/ha-modbus-akku-adapter/v1.2.0/blueprints/automation/akku_adapter/sma_stp_se_adapter.yaml` | ✅ live getestet |
 | SMA SBS | `sma_sbs_adapter.yaml` | – | 🧪 geplant (Register-Map abweichend) |
 | Andere (z. B. Huawei) | – | – | 💬 offen |
+
+### Kompatibilität
+
+| Komponente | Getestet mit | Status |
+|---|---|---|
+| Wechselrichter | SMA Sunny Tripower (STP SE) Hybrid, Firmware ab ~3.06.xx | ✅ live getestet (Autor) |
+| Batterie | BYD HVS / HVM | ✅ live getestet (Autor) |
+| Home Assistant | Core 2026.x | ✅ live getestet (Autor) |
+| SMA SBS 2.5 | – | 🔍 Schreib-Register community-bestätigt, Adapter selbst ungetestet |
+| SMA SBS 3.7–10 | – | 🔍 Register bekannt (Community/ioBroker), Adapter selbst ungetestet |
+| Andere WR-Hersteller | – | ❌ nicht unterstützt (anderes Register-Layout) |
+
+Details zu Registern/Quellen: [`docs/modbus-register-referenz.md`](docs/modbus-register-referenz.md).
+Bug gefunden oder ein anderes Setup zum Laufen gebracht? Bitte als
+[GitHub-Issue](https://github.com/Optic00/ha-modbus-akku-adapter/issues) melden, damit die
+Tabelle hier aktuell bleibt.
 
 ## Dokumentation
 
