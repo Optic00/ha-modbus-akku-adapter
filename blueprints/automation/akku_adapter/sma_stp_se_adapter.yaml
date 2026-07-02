@@ -28,11 +28,34 @@ blueprint:
       name: WR Betriebsstatus-Sensor
       description: >
         Sensor für den Betriebsstatus des Wechselrichters.
-        Muss den Wert "Ok" liefern wenn der WR betriebsbereit ist.
+        Muss einen Status aus `inverter_ok_states` liefern, damit der Adapter
+        Register schreibt (Standard-Vokabular: "Ok").
         Typisch: sensor.sma_stp_se_33003_betriebsstatus
       selector:
         entity:
           domain: sensor
+
+    inverter_ok_states:
+      name: "WR-Status: als betriebsbereit akzeptierte Werte"
+      description: >
+        Liste der Statuswerte von `inverter_status_sensor`, bei denen der
+        Adapter Modbus-Register schreibt (inklusive Keepalive). Standard: nur
+        "Ok".
+
+        Achtung: eine zu strenge Liste ist gefährlich. Meldet der WR einen
+        Status, der hier fehlt (z. B. "2119" = Abregelung wegen der
+        70%-Einspeisebegrenzung, oder einen Code, den ein selbstgebauter
+        Mapping-Helfer nicht kennt), blockiert das ALLE Läufe dieser
+        Automation, auch den Keepalive. Läuft die SMA-Fremdsteuerung dadurch
+        in ihren Timeout, fällt der WR in seinen internen Modus zurück und
+        lädt/entlädt eigenmächtig - unabhängig vom gewählten Modus. Status-
+        Codes wie Abregelung sollten deshalb mit aufgenommen werden, wenn sie
+        im eigenen Setup regelmäßig auftreten.
+      default:
+        - "Ok"
+      selector:
+        text:
+          multiple: true
 
     dynamic_charge_strength_sensor:
       name: Sensor "Dynamische Ladestärke"
@@ -107,6 +130,8 @@ blueprint:
 
 variables:
   # !input ist in Jinja nicht direkt verfügbar – erst als Variable exponieren.
+  inverter_status_entity: !input inverter_status_sensor
+  inverter_ok_states: !input inverter_ok_states
   dyn_charge_entity: !input dynamic_charge_strength_sensor
   capacity_entity: !input battery_capacity_sensor
   snapshot_helper: !input last_write_value_helper
@@ -184,9 +209,20 @@ triggers:
     id: ha_start
 
 conditions:
-  - condition: state
-    entity_id: !input inverter_status_sensor
-    state: "Ok"
+  # WR-Status-Gate: bewusst konfigurierbar statt hart auf "Ok" verdrahtet.
+  # Ein zu strenges Gate hier ist gefaehrlich, weil es ALLE Laeufe blockiert,
+  # inklusive Keepalive. Meldet der WR einen Status, der nicht in
+  # inverter_ok_states steht (z. B. 2119 = Abregelung wegen der
+  # 70%-Einspeisebegrenzung, oder ein Code, den ein eigener Mapping-Helfer
+  # nicht kennt), schreibt der Adapter so lange keine Register mehr, bis der
+  # Status wieder passt. Bleibt das laenger als das SMA-Keepalive-Fenster so,
+  # laeuft die externe Fremdsteuerung in ihren Timeout und der WR faellt in
+  # seinen internen Modus zurueck - er laedt/entlaedt dann eigenmaechtig,
+  # unabhaengig vom in HA gewaehlten Modus (live reproduziert). Status-Codes
+  # wie Abregelung sollten deshalb in inverter_ok_states mit aufgenommen
+  # werden, wenn sie im eigenen Setup regelmaessig auftreten.
+  - condition: template
+    value_template: "{{ states(inverter_status_entity) in inverter_ok_states }}"
   - condition: template
     value_template: >-
       {{ trigger.id != 'keepalive_check'

@@ -150,6 +150,20 @@ liefern, wenn der WR bereit ist (der rohe Modbus-Sensor gibt nur Zahlen zurück)
 {{ 'Ok' if s in [235, 1463] else 'nicht bereit' }}
 ```
 
+> ⚠️ **Blueprint-Input `inverter_ok_states` (ab v1.5.0) – Aushunger-Falle beim WR-Status-Gate:**
+> Das Blueprint schreibt Register nur, wenn `inverter_status_sensor` einen Wert aus
+> `inverter_ok_states` liefert (Standard: nur `"Ok"`).
+> Fehlt ein bei dir regelmäßig auftretender Status in dieser Liste - etwa `2119`
+> (Abregelung wegen der 70%-Einspeisebegrenzung) oder ein Code, den deine eigene
+> Vorlage oben nicht kennt und deshalb als `"nicht bereit"` mappt - blockiert das
+> ALLE Adapter-Läufe, auch den Keepalive.
+> Läuft dadurch die SMA-Fremdsteuerung in ihren Timeout, fällt der WR in seinen
+> internen Modus zurück und lädt/entlädt eigenmächtig, unabhängig vom in HA
+> gewählten Modus.
+> Trage deshalb jeden Status, der bei dir betriebsbereit bedeutet (inklusive
+> erwartbarer Abregelungs-Codes), in `inverter_ok_states` ein statt ihn nur in der
+> Sensor-Vorlage nach `"Ok"` zu übersetzen.
+
 **d) Der Sensor „Dynamische Ladestärke" (Watt)** kommt **nicht** aus diesem Repo, sondern
 von deiner *Strategie* (Schritt 3) bzw. dem Schwesterprojekt – oder du baust einen eigenen
 Template-Sensor, der einfach eine Watt-Zahl ausgibt.

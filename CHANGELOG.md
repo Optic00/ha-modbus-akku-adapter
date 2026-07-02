@@ -31,16 +31,30 @@ gezieltes, erzwungenes Netzladen (z. B. Negativpreis-Fenster oder Peak-Vorladen 
   "Akku Dynamisch", nur ohne Entlade-Möglichkeit.
 - Neue `input_select`-Option `Akku Netzladen` (9. Option) in
   `examples/akkusteuerung_helpers.example.yaml`.
+- **Neuer Input `inverter_ok_states`** (Sicherheitsfix, Community-Report): das
+  WR-Status-Gate akzeptierte bisher hart nur den Sensorwert `"Ok"`. Meldet der WR
+  einen anderen Status (z. B. `2119` = Abregelung wegen der 70%-Einspeisebegrenzung,
+  oder einen Code, den ein selbstgebauter Mapping-Helfer nicht kennt), blockierte
+  das ALLE Automations-Läufe inklusive Keepalive - die SMA-Fremdsteuerung lief dann
+  in ihren Timeout und der WR fiel in seinen internen Modus zurück (lud/entlud
+  eigenmächtig, live bestätigt: WR lud mit ~7 kW trotz aktivem Modus "Akku nur
+  Entladen"). Das Status-Gate ist jetzt eine konfigurierbare Liste
+  (`inverter_ok_states`, Default `["Ok"]`) statt einer hart codierten
+  State-Bedingung.
 
 ### Geändert
 - Blueprint-Beschreibung, README-Optionslisten und `docs/modus-contract.md` um den
   neuen Modus ergänzt.
+- WR-Status-Bedingung von `condition: state` (`== "Ok"`) auf `condition: template`
+  (`state in inverter_ok_states`) umgestellt.
 
 ### Nicht-breaking
 - Bestehende Modi (`Akku nur Laden` u. a.) sind unverändert - der neue Modus ist ein
   zusätzlicher `if`-Branch. Wer aktualisiert, muss lediglich die neue
   `input_select`-Option `Akku Netzladen` in seinem Modus-Dropdown ergänzen, um sie
   nutzen zu können; ohne die Option läuft der Adapter wie bisher weiter.
+- `inverter_ok_states` hat den Default `["Ok"]` - bei unverändertem Input verhält
+  sich das WR-Status-Gate exakt wie vorher.
 
 ### Bekanntes offenes Risiko
 - Der 500-W-Settling-Deckel aus v1.3.0 (Schutz vor Ladeleistungs-Spikes nach
