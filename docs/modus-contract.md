@@ -38,7 +38,11 @@ Strategie und Helfer bleiben unverändert.
 - Der Modus (Vokabular oben).
 - SoC-Grenzen: `input_number.minsoc`, `input_number.maxsoc`, Ziel via
   `sensor.opti_target_soc` (kanonischer Name; bei `ha-opti-akkusteuerung`
-  in `packages/opti_derived.yaml` definiert).
+  in `packages/opti_derived.yaml` definiert). **Reserviert:** Der SMA-Blueprint
+  (`sma_stp_se_adapter.yaml`) liest aktuell keinen dieser drei Werte selbst - er
+  bekommt nur die bereits fertig berechnete Ladestärke (`dynamic_charge_strength_sensor`)
+  und den Modus. SoC-Grenzen wirken heute ausschließlich über die Strategie, die den
+  Modus setzt.
 - Abstrakte Leistungswünsche in **Watt** (Lade-/Entlade-/Limit-Leistung), kanonisch
   `sensor.opti_charge_power_w`.
 
