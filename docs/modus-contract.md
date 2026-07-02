@@ -28,6 +28,7 @@ Strategie und Helfer bleiben unverändert.
 | `Akku Dynamisch` | Adapter regelt auf Ziel (SoC/Leistungsgrenzen) | min/max SoC, Grenzen |
 | `Akku Pause` | weder laden noch entladen | – |
 | `Akku nur Laden` | Entladen gesperrt | – |
+| `Akku Netzladen` | Entladen gesperrt + erzwungenes dynamisches Laden (Mindestladung = dynamisches Ziel) | Ladeleistung (W), dynamisch |
 | `Akku nur Entladen` | Laden gesperrt | – |
 | `Akku schnell Laden` | erzwungenes Laden | Ladeleistung (W) |
 | `Akku schnell Entladen` | erzwungenes Entladen | Entladeleistung (W) |

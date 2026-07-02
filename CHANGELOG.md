@@ -12,6 +12,47 @@ unabhängig weiterentwickelt werden können (Versions-Skew vermeiden).
 - `sma_sbs_adapter.yaml` (abweichendes Register-Map, gleicher Contract).
 - Capability-Schicht (Adapter meldet Fähigkeiten) – erst mit erstem Nicht-SMA-Adapter.
 
+## [1.5.0] - 2026-07-02 - Adapter `sma_stp_se`: neuer Modus "Akku Netzladen"
+
+Additives MINOR-Release (Contract-Erweiterung um einen neuen Modus, kein Breaking
+Change an bestehenden Modi). Hintergrund: der bisherige Modus "Akku nur Laden"
+(`CmpBMS.OpMod` 2289) ist eine reine Entladesperre - Netzbezug entsteht dabei nur,
+wenn `BatChaMinW` (Register 40793) manuell auf einen Wert > 0 gesetzt wird. Für
+gezieltes, erzwungenes Netzladen (z. B. Negativpreis-Fenster oder Peak-Vorladen in
+`ha-opti-akkusteuerung`) fehlte bisher ein eigener Modus.
+
+### Hinzugefügt
+- **Neuer Modus `Akku Netzladen`**: schreibt denselben `CmpBMS.OpMod`-Wert `2289`
+  wie "Akku nur Laden" (Entladen bleibt gesperrt), setzt aber `BatChaMinW` (40793)
+  auf die volle dynamische Ladeleistung (`dyn_charge_entity`) statt sie auf
+  `akkusteuerung_min_ladestaerke` zu deckeln. Damit wird die Anlage gezwungen,
+  mindestens mit dem dynamisch berechneten Sollwert aus dem Netz zu laden -
+  akkuschonend über dieselbe SoC-Taper-/Score-/Temperaturlogik wie im Modus
+  "Akku Dynamisch", nur ohne Entlade-Möglichkeit.
+- Neue `input_select`-Option `Akku Netzladen` (9. Option) in
+  `examples/akkusteuerung_helpers.example.yaml`.
+
+### Geändert
+- Blueprint-Beschreibung, README-Optionslisten und `docs/modus-contract.md` um den
+  neuen Modus ergänzt.
+
+### Nicht-breaking
+- Bestehende Modi (`Akku nur Laden` u. a.) sind unverändert - der neue Modus ist ein
+  zusätzlicher `if`-Branch. Wer aktualisiert, muss lediglich die neue
+  `input_select`-Option `Akku Netzladen` in seinem Modus-Dropdown ergänzen, um sie
+  nutzen zu können; ohne die Option läuft der Adapter wie bisher weiter.
+
+### Bekanntes offenes Risiko
+- Der 500-W-Settling-Deckel aus v1.3.0 (Schutz vor Ladeleistungs-Spikes nach
+  Moduswechsel) ist bewusst weiterhin nur an `Akku Dynamisch` gebunden und greift
+  NICHT beim Wechsel nach `Akku Netzladen`. Die in v1.3.0 dokumentierte Root Cause
+  (interne Ladeleistungsgrenze driftet, solange Laden im aktuellen Modus irrelevant
+  ist) betraf denselben Ausgangszustand (Rueckkehr aus einem Nicht-Lade-Modus wie
+  "nur Entladen") wie ein Wechsel nach "Akku Netzladen" - ob derselbe Spike auch
+  hier auftritt, ist **nicht live verifiziert**. Vor Produktiv-Rollout: Uebergang
+  "nur Entladen"/"Pause" -> "Akku Netzladen" gezielt auf Spikes testen (siehe
+  `docs/modbus-register-referenz.md`, Abschnitt "Bekannte Probleme & Hinweise").
+
 ## [1.3.0] – 2026-07-01 — Adapter `sma_stp_se`: Ladeleistungs-Spike nach Moduswechsel behoben
 
 Additives MINOR-Release (Contract unverändert, keine neuen Inputs). Live beobachtet

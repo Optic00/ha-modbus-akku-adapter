@@ -113,7 +113,7 @@ Diese Register steuern den dynamischen Betrieb. Der WR regelt dabei **selbststä
 
 | Adresse | SMA Bezeichnung | In offizieller Doku | Bedeutung | Typischer Wert |
 |---|---|---|---|---|
-| 40793 | `CmpBMS.BatChaMinW` | ❌ | Minimale Ladestärke | `0` |
+| 40793 | `CmpBMS.BatChaMinW` | ❌ | Minimale Ladestärke (im Modus "Akku Netzladen": volle dynamische Ladeleistung, erzwungenes Netzladen) | `0` |
 | 40795 | `CmpBMS.BatChaMaxW` | ✅ | Maximale Ladestärke | z.B. `2560` (= 0.2C bei 12.8 kWh) |
 | 40797 | `CmpBMS.BatDschMinW` | ❌ | Minimale Entladestärke | `0` |
 | 40799 | `CmpBMS.BatDschMaxW` | ✅ | Maximale Entladestärke | z.B. `5000` |
@@ -130,7 +130,7 @@ Diese Register steuern den dynamischen Betrieb. Der WR regelt dabei **selbststä
 |---|---|---|---|
 | 41259 | `CmpBMS.OpMod` | `[0, 303]` | **Akku Pause** – kein Laden, kein Entladen |
 | 41259 | `CmpBMS.OpMod` | `[0, 1438]` | **Dynamisch** – WR regelt auf GridWSpt |
-| 41259 | `CmpBMS.OpMod` | `[0, 2289]` | **Nur Laden** |
+| 41259 | `CmpBMS.OpMod` | `[0, 2289]` | **Nur Laden** / **Netzladen** (gleicher OpMod, unterscheiden sich nur in `BatChaMinW`, siehe unten) |
 | 41259 | `CmpBMS.OpMod` | `[0, 2290]` | **Nur Entladen** |
 
 ---
@@ -333,6 +333,17 @@ Live verifiziert (Bens Anlage): mit Fix blieb die Ladeleistung im kritischen Fen
 durchgehend ≤ 625 W (vorher bis 10.748 W), sauberer Übergang auf den echten Sollwert nach
 Fensterablauf, kein Spike mehr. Zusätzlicher Regressionstest (Pause + Schnell Laden/
 Entladen bei 500/1000/2000 W) unauffällig.
+
+**Offene Frage seit v1.5.0: gilt derselbe Spike-Mechanismus auch für "Akku Netzladen"?**  
+Der 500-W-Settling-Deckel aus v1.3.0 ist bewusst weiterhin nur an den Modus "Akku
+Dynamisch" gebunden (siehe oben) und greift NICHT beim Wechsel nach "Akku Netzladen"
+(neu in v1.5.0, schreibt `BatChaMinW` auf die volle dynamische Ladeleistung). Der
+oben beschriebene Ausgangszustand - Rückkehr aus einem Modus, in dem Laden irrelevant
+ist (z. B. "nur Entladen" oder "Pause") - ist beim Übergang nach "Akku Netzladen"
+strukturell derselbe wie beim ursprünglich beobachteten "nur Entladen" → "Dynamisch"-
+Spike. Ob der WR auch hier eine driftende interne Ladeleistungsgrenze zeigt, ist
+**nicht live getestet**. Vor Produktiv-Rollout von "Akku Netzladen": Übergang
+"nur Entladen"/"Pause" → "Akku Netzladen" gezielt auf einen Leistungs-Spike prüfen.
 
 ---
 

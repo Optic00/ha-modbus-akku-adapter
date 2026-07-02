@@ -27,9 +27,10 @@ Home Assistant **vorher** drei Dinge existieren. Reihenfolge:
    **einzige** Teil, der zwingend YAML braucht – HA hat dafür keine Oberfläche.)
    → Vorlage: [`examples/sma_modbus.example.yaml`](examples/sma_modbus.example.yaml) (nur die IP eintragen).
 2. **Ein paar Helfer**, die du komplett **über die HA-Oberfläche** anlegen kannst:
-   ein Steuer-Dropdown `input_select.akkusteuerung_modus` mit **8 festen Optionen**
+   ein Steuer-Dropdown `input_select.akkusteuerung_modus` mit **9 festen Optionen**
    (`Akku Automatisch`, `Akku Dynamisch`, `Akku Pause`, `Akku nur Laden`,
-   `Akku nur Entladen`, `Akku schnell Laden`, `Akku schnell Entladen`, `Akku 0.2C Laden`)
+   `Akku Netzladen`, `Akku nur Entladen`, `Akku schnell Laden`, `Akku schnell Entladen`,
+   `Akku 0.2C Laden`)
    **plus 6 Zahlen-Helfer** (`input_number.*`) für die Lade-/Entlade-Leistungen in Watt.
    (Der 0.2C-Wert wird automatisch aus der Batteriekapazität berechnet – kein Feld nötig.)
    → Lieber kopieren statt klicken? [`examples/akkusteuerung_helpers.example.yaml`](examples/akkusteuerung_helpers.example.yaml).
@@ -112,13 +113,14 @@ Diese Helfer legst du komplett per GUI an – **kein YAML nötig**. Pfad:
 > Helfer über das Zahnrad korrigieren.)
 
 **a) Das Steuer-Dropdown** – Typ **„Auswahl"**, Name `Akkusteuerung Modus`. Trage als
-Optionen **exakt** diese 8 Werte ein (Reihenfolge egal, Schreibweise nicht):
+Optionen **exakt** diese 9 Werte ein (Reihenfolge egal, Schreibweise nicht):
 
 ```
 Akku Automatisch
 Akku Dynamisch
 Akku Pause
 Akku nur Laden
+Akku Netzladen
 Akku nur Entladen
 Akku schnell Laden
 Akku schnell Entladen
