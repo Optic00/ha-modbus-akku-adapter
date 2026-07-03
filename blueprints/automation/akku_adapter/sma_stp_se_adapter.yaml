@@ -156,12 +156,14 @@ variables:
        else ([states('input_number.akkusteuerung_min_ladestaerke') | int(0), states(dyn_charge_entity) | int(0)] | min) }}
   # dynamisch_settling greift nur im Modus "Akku Dynamisch" (siehe Bedingung oben),
   # ist also in "Akku Netzladen" immer False -> v_40793 = v_40793_raw, ungedeckelt.
-  # OFFENES RISIKO (bewusst so belassen, siehe Aufgabenstellung): der in v1.3.0
-  # behobene Ladeleistungs-Spike trat nach Rueckkehr aus einem "Laden irrelevant"-
-  # Modus (nur Entladen) in einen Lademodus auf. "Akku Netzladen" ist ebenfalls
-  # ein Ziel-Uebergang aus so einem Modus (z. B. aus "nur Entladen"/"Pause") -
-  # der 500W-Settling-Deckel greift hier NICHT. Vor Live-Rollout unbedingt den
-  # Uebergang nur Entladen/Pause -> Netzladen auf Spikes testen (siehe Report).
+  # OFFENES RISIKO (bewusst so belassen, siehe CHANGELOG v1.5.0 "Bekanntes
+  # offenes Risiko"): der in v1.3.0 behobene Ladeleistungs-Spike trat nach
+  # Rueckkehr aus einem "Laden irrelevant"-Modus (nur Entladen) in einen
+  # Lademodus auf. "Akku Netzladen" ist ebenfalls ein Ziel-Uebergang aus so
+  # einem Modus (z. B. aus "nur Entladen"/"Pause") - der 500W-Settling-Deckel
+  # greift hier NICHT. Vor Live-Rollout unbedingt den Uebergang nur
+  # Entladen/Pause -> Netzladen auf Spikes testen (Details:
+  # docs/modbus-register-referenz.md, "Bekannte Probleme & Hinweise").
 
   v_40793: "{{ [v_40793_raw, dynamisch_settling_cap_w] | min if dynamisch_settling else v_40793_raw }}"
   v_40795_raw: "{{ states(dyn_charge_entity) | int(0) }}"
