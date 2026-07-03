@@ -109,21 +109,28 @@ Quelle: Offizielle SMA Support-Antwort (via [Photovoltaikforum, ajay123](https:/
 
 > ⚠️ **Hinweis:** Die Register 40793, 40797, 40801, 41259 und 40236 tauchen in der offiziellen SMA Modbus-Parameterliste **nicht auf** – sie wurden durch direkten SMA-Support-Kontakt bekannt (ajay123) und sind in der Praxis erprobt. Es handelt sich vermutlich um interne Register die auch der Home Manager verwendet.
 
-Diese Register steuern den dynamischen Betrieb. Der WR regelt dabei **selbstständig den Netzanschlusspunkt** auf den Sollwert `CmpBMS.GridWSpt`. Alle Werte in **Watt**, müssen **zyklisch max. alle 300 s** gesendet werden und **innerhalb von 10 s** gesetzt sein.
+Diese Register steuern den dynamischen Betrieb.
+Der WR regelt dabei **selbstständig den Netzanschlusspunkt** auf den Sollwert `CmpBMS.GridWSpt`.
+Die vier Min-/Max-Register sind dabei **Grenzen des Erlaubnisfensters** für diese WR-eigene Regelung, keine Sollwerte: die tatsächliche Lade-/Entladeleistung wählt der WR selbst innerhalb von `[Min, Max]`.
+Typische Nutzung: Min-Register auf `0` lassen und die Max-Register als Deckel setzen, z.B. zur Akkuschonung (`BatChaMaxW = 5000`).
+Alle Werte in **Watt**, müssen **zyklisch max. alle 300 s** gesendet werden und **innerhalb von 10 s** gesetzt sein.
 
 | Adresse | SMA Bezeichnung | In offizieller Doku | Bedeutung | Typischer Wert |
 |---|---|---|---|---|
-| 40793 | `CmpBMS.BatChaMinW` | ❌ | Minimale Ladestärke | `0` |
-| 40795 | `CmpBMS.BatChaMaxW` | ✅ | Maximale Ladestärke | z.B. `2560` (= 0.2C bei 12.8 kWh) |
-| 40797 | `CmpBMS.BatDschMinW` | ❌ | Minimale Entladestärke | `0` |
-| 40799 | `CmpBMS.BatDschMaxW` | ✅ | Maximale Entladestärke | z.B. `5000` |
+| 40793 | `CmpBMS.BatChaMinW` | ❌ | Untergrenze Ladeleistungsfenster | `0` |
+| 40795 | `CmpBMS.BatChaMaxW` | ✅ | Obergrenze Ladeleistungsfenster (Deckel) | z.B. `2560` (= 0.2C bei 12.8 kWh) |
+| 40797 | `CmpBMS.BatDschMinW` | ❌ | Untergrenze Entladeleistungsfenster | `0` |
+| 40799 | `CmpBMS.BatDschMaxW` | ✅ | Obergrenze Entladeleistungsfenster (Deckel) | z.B. `5000` |
 | 40801 | `CmpBMS.GridWSpt` | ❌ | Netz-Sollwert | `0` |
 | 41259 | `CmpBMS.OpMod` | ❌ | Betriebsmodus | siehe unten |
 
 > 💡 Wenn dieses Register-Set verwendet wird, muss die prognosebasierte Akkusteuerung im SunnyPortal/Home Manager deaktiviert sein – der Home Manager nutzt dieselben Register.
 
-> ⚠️ **BatChaMinW/BatChaMaxW werden vom WR nicht in jedem Kontext befolgt (Community-Befund, 2026-07-03).**
-> Details und Reaktion im Adapter: Abschnitt "Bekannte Probleme & Hinweise" unten.
+> ⚠️ **Einordnung BatChaMinW/BatChaMaxW (Community-Befunde, Stand 2026-07-03):**
+> Belegt ist, dass `BatChaMaxW` im Modus Dynamisch (`CmpBMS.OpMod` 1438) als Deckel wirkt (live verifiziert).
+> Ebenfalls belegt ist, dass sich die Register im getesteten Setup `OpMod` 2289 mit `BatChaMinW` = `BatChaMaxW` > 0 NICHT als aktive Ladesteuerung eignen.
+> Ob `BatChaMinW` > 0 in anderen Konstellationen ein Mindest-Laden erzwingt, ist unbelegt.
+> Details, Abgrenzung belegt vs. Hypothese und Reaktion im Adapter: Abschnitt "Bekannte Probleme & Hinweise" unten.
 
 ---
 
@@ -337,15 +344,22 @@ durchgehend ≤ 625 W (vorher bis 10.748 W), sauberer Übergang auf den echten S
 Fensterablauf, kein Spike mehr. Zusätzlicher Regressionstest (Pause + Schnell Laden/
 Entladen bei 500/1000/2000 W) unauffällig.
 
-**BatChaMinW/BatChaMaxW werden vom WR nicht in jedem Kontext befolgt (v1.5.0-Befund, 2026-07-03):**  
-Live-Regressionstest am SMA STP SE 10.0 (Daten aus dem HA-Recorder): der ursprüngliche Ansatz für "Akku
-Netzladen" (`CmpBMS.OpMod` 2289 + `BatChaMinW` / 40793 auf die volle dynamische Ladeleistung gesetzt)
-funktionierte nicht.
-Der WR ignorierte `BatChaMinW` zunächst 5,5 Minuten komplett (0 W Ladung).
-Danach kippte er in einen internen Modus und lud mit voller PV-Leistung (6,6–6,7 kW), wobei auch
-`BatChaMaxW` (40795) ignoriert wurde – Export fiel dabei auf 0.
-Der reine 40149/40151-Sollwertpfad (siehe "Sollwert Batterieleistung direkt" oben, wie im Modus "Akku
-schnell Laden" genutzt) war im selben Test punktstabil: 9 s nach Umschaltung exakt auf dem Sollwert.
+**BatChaMinW/BatChaMaxW sind Fenstergrenzen, keine Sollwerte - und taugen nicht als aktive Ladesteuerung (v1.5.0-Befund, 2026-07-03):**  
+Live-Regressionstest am SMA STP SE 10.0 (Daten aus dem HA-Recorder).
+Der ursprüngliche Ansatz für "Akku Netzladen" versuchte, den WR über `CmpBMS.OpMod` 2289 ("nur Laden") plus `BatChaMinW` (40793) = `BatChaMaxW` (40795) = volle dynamische Ladeleistung (Fensterbreite 0) zum Laden zu zwingen.
+Das funktionierte nicht.
+
+*Belegt (Recorder-verifiziert):*
+- Im Modus Dynamisch (`OpMod` 1438) wirkt `BatChaMaxW` als Deckel: mit dem 500-W-Settling-Cap des Adapters blieb die Ladeleistung sauber auf ~500 W begrenzt, und auch im historischen Normalbetrieb (Min = 0, Max = dynamische Ladeleistung) hielt sich der WR an das Fenster (Ausnahme: die dokumentierten Einspeisebegrenzungs-Sonderfälle bei Zählerverlust/Abregelung).
+- Im getesteten Setup `OpMod` 2289 + Min = Max = 2560 W lud der WR zunächst 5,5 Minuten mit 0 W (trotz Min > 0).
+- Danach kippte er in ungeregeltes Laden mit voller PV-Leistung (6,6-6,7 kW, deutlich über Max), Export fiel auf 0 - in diesem Zustand war auch `BatChaMaxW` wirkungslos.
+- Der reine 40149/40151-Sollwertpfad (siehe "Sollwert Batterieleistung direkt" oben, wie im Modus "Akku schnell Laden" genutzt) war im selben Test punktstabil: 9 s nach Umschaltung exakt auf dem Sollwert.
+
+*Einordnung/Hypothesen (ein einzelner Test, keine Firmware-Doku):*
+- Die Befunde passen zur Fenster-Semantik oben: Min/Max begrenzen die WR-eigene Regelung, sie kommandieren sie nicht.
+- Dass `BatChaMinW` > 0 kein Laden erzwang, spricht dafür, dass Min nur eine Untergrenze für den Fall ist, dass der WR überhaupt lädt, und keinen Netzbezug erzwingt - für den Modus Dynamisch ist das aber unbelegt, dort lief Min historisch immer auf 0.
+- Für das Kippen nach 5,5 Minuten gibt es mehrere Erklärungskandidaten: eine Firmware-Plausibilitätsprüfung, die das degenerierte Fenster Min = Max verwirft und auf interne Defaults zurückfällt; ein generell anderes Regelverhalten im 2289-Kontext; oder ein Ablauf der externen Vorgaben (auffällige zeitliche Nähe der ~5,5 Minuten zum 300-s-Zyklus-Limit).
+- Welcher Kandidat zutrifft, ist offen; getestet wurde nur diese eine Konstellation.
 
 **Reaktion im Adapter:** "Akku Netzladen" nutzt ab v1.5.0 deshalb dieselbe 40151/40149-Kommandoschiene wie
 "Akku schnell Laden" statt der BMS-Leistungsgrenzen-Register (40793–40801/41259).
@@ -356,10 +370,9 @@ nicht gezielt auf einen Leistungs-Spike geprüft.
 Empfehlung für Produktiv-Rollout: diesen Übergang einmal beobachten, auch wenn das Restrisiko nach der
 Mechanik-Umstellung als gering einzuschätzen ist.
 
-**Für eigene Nutzung der BMS-Leistungsgrenzen-Register (40793–40801):** wer `BatChaMinW`/`BatChaMaxW` für
-andere Zwecke einsetzt, sollte das Verhalten am eigenen WR selbst verifizieren und sich nicht blind auf die
-dokumentierten Grenzwerte verlassen – der Befund oben deutet darauf hin, dass der WR diese Register nicht in
-jedem internen Betriebszustand befolgt.
+**Für eigene Nutzung der BMS-Leistungsgrenzen-Register (40793–40801):**
+Als Grenzfenster (Min = 0, Max als Deckel) im Modus Dynamisch sind die Register erprobt und die empfohlene Nutzung.
+Wer sie darüber hinaus als aktive Ladesteuerung einsetzen will (insbesondere Min > 0 oder Min = Max), sollte das Verhalten am eigenen WR selbst verifizieren - der Befund oben zeigt, dass das mindestens im 2289-Kontext nicht funktioniert.
 
 ---
 

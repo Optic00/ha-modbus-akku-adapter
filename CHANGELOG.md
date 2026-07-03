@@ -16,10 +16,11 @@ unabhängig weiterentwickelt werden können (Versions-Skew vermeiden).
 
 Additives MINOR-Release (Contract-Erweiterung um einen neuen Modus, kein Breaking
 Change an bestehenden Modi). Hintergrund: der bisherige Modus "Akku nur Laden"
-(`CmpBMS.OpMod` 2289) ist eine reine Entladesperre - Netzbezug entsteht dabei nur,
-wenn `BatChaMinW` (Register 40793) manuell auf einen Wert > 0 gesetzt wird. Für
-gezieltes, erzwungenes Netzladen (z. B. Negativpreis-Fenster oder Peak-Vorladen in
-`ha-opti-akkusteuerung`) fehlte bisher ein eigener Modus.
+(`CmpBMS.OpMod` 2289) ist eine reine Entladesperre - erzwungenes Laden ließ sich
+darüber im Live-Test nicht erreichen, auch nicht mit `BatChaMinW` (Register
+40793) über 0 (siehe "Geändert" unten). Für gezieltes, erzwungenes Netzladen
+(z. B. Negativpreis-Fenster oder Peak-Vorladen in `ha-opti-akkusteuerung`) fehlte
+bisher ein eigener Modus.
 
 ### Hinzugefügt
 - **Neuer Modus `Akku Netzladen`**: nutzt dieselbe 40151/40149-Kommandoschiene wie
@@ -58,7 +59,12 @@ gezieltes, erzwungenes Netzladen (z. B. Negativpreis-Fenster oder Peak-Vorladen 
   dagegen punktstabil auf den Sollwert (9 s nach Umschaltung exakt am Ziel).
   "Akku Netzladen" nutzt deshalb jetzt dieselbe Kommandoschiene statt der
   BMS-Leistungsgrenzen-Register.
-  Details und Einordnung als Community-Wissen: `docs/modbus-register-referenz.md`,
+  Einordnung: das widerlegt nicht die Fenster-Semantik der Register
+  (`BatChaMinW`/`BatChaMaxW` sind Grenzen des Erlaubnisfensters der WR-eigenen
+  Regelung, keine Sollwerte; `BatChaMaxW` wirkt im Modus Dynamisch nachweislich
+  als Deckel), sondern nur ihre Eignung als aktive Ladesteuerung im getesteten
+  Setup (2289 + Min = Max > 0).
+  Details und Abgrenzung belegt vs. Hypothese: `docs/modbus-register-referenz.md`,
   Abschnitt "Bekannte Probleme & Hinweise".
 - Blueprint-Beschreibung, README-Optionslisten und `docs/modus-contract.md` um den
   neuen Modus ergänzt.
