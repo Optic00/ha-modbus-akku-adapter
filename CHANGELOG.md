@@ -12,7 +12,7 @@ unabhängig weiterentwickelt werden können (Versions-Skew vermeiden).
 - `sma_sbs_adapter.yaml` (abweichendes Register-Map, gleicher Contract).
 - Capability-Schicht (Adapter meldet Fähigkeiten) – erst mit erstem Nicht-SMA-Adapter.
 
-## [1.5.0] - 2026-07-02 - Adapter `sma_stp_se`: neuer Modus "Akku Netzladen"
+## [1.5.0] - 2026-07-03 - Adapter `sma_stp_se`: neuer Modus "Akku Netzladen"
 
 Additives MINOR-Release (Contract-Erweiterung um einen neuen Modus, kein Breaking
 Change an bestehenden Modi). Hintergrund: der bisherige Modus "Akku nur Laden"
@@ -22,13 +22,17 @@ gezieltes, erzwungenes Netzladen (z. B. Negativpreis-Fenster oder Peak-Vorladen 
 `ha-opti-akkusteuerung`) fehlte bisher ein eigener Modus.
 
 ### Hinzugefügt
-- **Neuer Modus `Akku Netzladen`**: schreibt denselben `CmpBMS.OpMod`-Wert `2289`
-  wie "Akku nur Laden" (Entladen bleibt gesperrt), setzt aber `BatChaMinW` (40793)
-  auf die volle dynamische Ladeleistung (`dyn_charge_entity`) statt sie auf
-  `akkusteuerung_min_ladestaerke` zu deckeln. Damit wird die Anlage gezwungen,
-  mindestens mit dem dynamisch berechneten Sollwert aus dem Netz zu laden -
-  akkuschonend über dieselbe SoC-Taper-/Score-/Temperaturlogik wie im Modus
-  "Akku Dynamisch", nur ohne Entlade-Möglichkeit.
+- **Neuer Modus `Akku Netzladen`**: nutzt dieselbe 40151/40149-Kommandoschiene wie
+  "Akku schnell Laden" (Externe Steuerung aktivieren, dann Ladeleistung direkt auf
+  40149 schreiben).
+  Die Ladeleistung kommt aber aus der dynamischen Strategie (`dyn_charge_entity`)
+  statt aus dem manuellen `akkusteuerung_ladestaerke_soll`.
+  Damit wird die Anlage gezwungen, mit dem dynamisch berechneten Sollwert aus dem
+  Netz zu laden - akkuschonend über dieselbe SoC-Taper-/Score-/Temperaturlogik wie
+  im Modus "Akku Dynamisch", nur ohne Entlade-Möglichkeit.
+  - Der ursprüngliche Ansatz über `CmpBMS.OpMod` 2289 + `BatChaMinW` (40793) wurde
+    vor dem Release live getestet und **verworfen**.
+    Siehe "Geändert" unten.
 - Neue `input_select`-Option `Akku Netzladen` (9. Option) in
   `examples/akkusteuerung_helpers.example.yaml`.
 - **Neuer Input `inverter_ok_states`** (Sicherheitsfix, Community-Report): das
@@ -43,6 +47,19 @@ gezieltes, erzwungenes Netzladen (z. B. Negativpreis-Fenster oder Peak-Vorladen 
   State-Bedingung.
 
 ### Geändert
+- **Mechanik von "Akku Netzladen" nach Live-Regressionstest umgestellt** (SMA STP SE
+  10.0, 2026-07-03, Daten aus dem HA-Recorder).
+  Der zuerst gebaute Ansatz über `CmpBMS.OpMod` 2289 + `BatChaMinW` (40793)
+  funktionierte am realen WR nicht.
+  Er ignorierte `BatChaMinW` zunächst 5,5 Minuten komplett (0 W Ladung), kippte dann
+  in einen internen Modus und lud mit voller PV-Leistung (6,6-6,7 kW) unter
+  Missachtung von `BatChaMaxW`, Export brach dabei auf 0 ein.
+  Die 40151/40149-Kommandoschiene von "Akku schnell Laden" regelte im selben Test
+  dagegen punktstabil auf den Sollwert (9 s nach Umschaltung exakt am Ziel).
+  "Akku Netzladen" nutzt deshalb jetzt dieselbe Kommandoschiene statt der
+  BMS-Leistungsgrenzen-Register.
+  Details und Einordnung als Community-Wissen: `docs/modbus-register-referenz.md`,
+  Abschnitt "Bekannte Probleme & Hinweise".
 - Blueprint-Beschreibung, README-Optionslisten und `docs/modus-contract.md` um den
   neuen Modus ergänzt.
 - WR-Status-Bedingung von `condition: state` (`== "Ok"`) auf `condition: template`
@@ -58,14 +75,17 @@ gezieltes, erzwungenes Netzladen (z. B. Negativpreis-Fenster oder Peak-Vorladen 
 
 ### Bekanntes offenes Risiko
 - Der 500-W-Settling-Deckel aus v1.3.0 (Schutz vor Ladeleistungs-Spikes nach
-  Moduswechsel) ist bewusst weiterhin nur an `Akku Dynamisch` gebunden und greift
-  NICHT beim Wechsel nach `Akku Netzladen`. Die in v1.3.0 dokumentierte Root Cause
-  (interne Ladeleistungsgrenze driftet, solange Laden im aktuellen Modus irrelevant
-  ist) betraf denselben Ausgangszustand (Rueckkehr aus einem Nicht-Lade-Modus wie
-  "nur Entladen") wie ein Wechsel nach "Akku Netzladen" - ob derselbe Spike auch
-  hier auftritt, ist **nicht live verifiziert**. Vor Produktiv-Rollout: Uebergang
-  "nur Entladen"/"Pause" -> "Akku Netzladen" gezielt auf Spikes testen (siehe
-  `docs/modbus-register-referenz.md`, Abschnitt "Bekannte Probleme & Hinweise").
+  Moduswechsel) ist weiterhin nur an `Akku Dynamisch` gebunden und greift NICHT bei
+  `Akku Netzladen`.
+  Das ist nach der Mechanik-Umstellung unkritischer als zunächst angenommen: der
+  v1.3.0-Spike trat ausschließlich über den BMS-Leistungsgrenzen-Pfad
+  (40793-40801/41259) auf, den "Akku Netzladen" jetzt gar nicht mehr benutzt.
+  Der 40151/40149-Pfad von "Akku schnell Laden" war im Live-Test nie spike-betroffen -
+  punktstabil auf den Sollwert innerhalb von 9 s.
+  Eine Restunsicherheit bleibt, da der Übergang aus "nur Entladen"/"Pause" nach
+  "Akku Netzladen" selbst noch nicht gezielt auf Spikes getestet wurde; das wird vor
+  Produktiv-Rollout empfohlen (siehe `docs/modbus-register-referenz.md`, Abschnitt
+  "Bekannte Probleme & Hinweise").
 
 ## [1.4.0] – 2026-07-01 — Adapter `sma_stp_se`: kanonischer Sensor-Default
 

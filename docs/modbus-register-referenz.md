@@ -99,7 +99,7 @@ Quelle: Offizielle SMA Support-Antwort (via [Photovoltaikforum, ajay123](https:/
 
 Beispiel: 3000 W Laden → `[65535, 62536]`
 
-> ℹ️ **Hinweis zur Laden-Formel:** Die beiden 16-Bit-Wörter werden vom WR als ein vorzeichenbehafteter S32 gelesen (Laden = negativ). Das korrekte Zweierkomplement für −P W ist `[65535, 65536 − P]`. Eine ältere, in der Praxis ebenfalls genutzte Variante `65535 − P` ergibt **−(P+1) W** (1 W zu viel) – für die Steuerung praktisch irrelevant, aber `65536 − P` ist exakt. Der Adapter-Blueprint nutzt aktuell diese `65535 − P`-Variante in beiden Lade-Branches (schnell Laden / 0.2C) und ist so live getestet.
+> ℹ️ **Hinweis zur Laden-Formel:** Die beiden 16-Bit-Wörter werden vom WR als ein vorzeichenbehafteter S32 gelesen (Laden = negativ). Das korrekte Zweierkomplement für −P W ist `[65535, 65536 − P]`. Eine ältere, in der Praxis ebenfalls genutzte Variante `65535 − P` ergibt **−(P+1) W** (1 W zu viel) – für die Steuerung praktisch irrelevant, aber `65536 − P` ist exakt. Der Adapter-Blueprint nutzt aktuell diese `65535 − P`-Variante in allen drei Lade-Branches über diesen Pfad (schnell Laden / Netzladen / 0.2C) und ist so live getestet.
 
 ---
 
@@ -113,7 +113,7 @@ Diese Register steuern den dynamischen Betrieb. Der WR regelt dabei **selbststä
 
 | Adresse | SMA Bezeichnung | In offizieller Doku | Bedeutung | Typischer Wert |
 |---|---|---|---|---|
-| 40793 | `CmpBMS.BatChaMinW` | ❌ | Minimale Ladestärke (im Modus "Akku Netzladen": volle dynamische Ladeleistung, erzwungenes Netzladen) | `0` |
+| 40793 | `CmpBMS.BatChaMinW` | ❌ | Minimale Ladestärke | `0` |
 | 40795 | `CmpBMS.BatChaMaxW` | ✅ | Maximale Ladestärke | z.B. `2560` (= 0.2C bei 12.8 kWh) |
 | 40797 | `CmpBMS.BatDschMinW` | ❌ | Minimale Entladestärke | `0` |
 | 40799 | `CmpBMS.BatDschMaxW` | ✅ | Maximale Entladestärke | z.B. `5000` |
@@ -121,6 +121,9 @@ Diese Register steuern den dynamischen Betrieb. Der WR regelt dabei **selbststä
 | 41259 | `CmpBMS.OpMod` | ❌ | Betriebsmodus | siehe unten |
 
 > 💡 Wenn dieses Register-Set verwendet wird, muss die prognosebasierte Akkusteuerung im SunnyPortal/Home Manager deaktiviert sein – der Home Manager nutzt dieselben Register.
+
+> ⚠️ **BatChaMinW/BatChaMaxW werden vom WR nicht in jedem Kontext befolgt (Community-Befund, 2026-07-03).**
+> Details und Reaktion im Adapter: Abschnitt "Bekannte Probleme & Hinweise" unten.
 
 ---
 
@@ -130,7 +133,7 @@ Diese Register steuern den dynamischen Betrieb. Der WR regelt dabei **selbststä
 |---|---|---|---|
 | 41259 | `CmpBMS.OpMod` | `[0, 303]` | **Akku Pause** – kein Laden, kein Entladen |
 | 41259 | `CmpBMS.OpMod` | `[0, 1438]` | **Dynamisch** – WR regelt auf GridWSpt |
-| 41259 | `CmpBMS.OpMod` | `[0, 2289]` | **Nur Laden** / **Netzladen** (gleicher OpMod, unterscheiden sich nur in `BatChaMinW`, siehe unten) |
+| 41259 | `CmpBMS.OpMod` | `[0, 2289]` | **Nur Laden** – Entladen gesperrt (`Akku Netzladen` nutzt seit v1.5.0 NICHT diesen Pfad, siehe unten) |
 | 41259 | `CmpBMS.OpMod` | `[0, 2290]` | **Nur Entladen** |
 
 ---
@@ -334,16 +337,29 @@ durchgehend ≤ 625 W (vorher bis 10.748 W), sauberer Übergang auf den echten S
 Fensterablauf, kein Spike mehr. Zusätzlicher Regressionstest (Pause + Schnell Laden/
 Entladen bei 500/1000/2000 W) unauffällig.
 
-**Offene Frage seit v1.5.0: gilt derselbe Spike-Mechanismus auch für "Akku Netzladen"?**  
-Der 500-W-Settling-Deckel aus v1.3.0 ist bewusst weiterhin nur an den Modus "Akku
-Dynamisch" gebunden (siehe oben) und greift NICHT beim Wechsel nach "Akku Netzladen"
-(neu in v1.5.0, schreibt `BatChaMinW` auf die volle dynamische Ladeleistung). Der
-oben beschriebene Ausgangszustand - Rückkehr aus einem Modus, in dem Laden irrelevant
-ist (z. B. "nur Entladen" oder "Pause") - ist beim Übergang nach "Akku Netzladen"
-strukturell derselbe wie beim ursprünglich beobachteten "nur Entladen" → "Dynamisch"-
-Spike. Ob der WR auch hier eine driftende interne Ladeleistungsgrenze zeigt, ist
-**nicht live getestet**. Vor Produktiv-Rollout von "Akku Netzladen": Übergang
-"nur Entladen"/"Pause" → "Akku Netzladen" gezielt auf einen Leistungs-Spike prüfen.
+**BatChaMinW/BatChaMaxW werden vom WR nicht in jedem Kontext befolgt (v1.5.0-Befund, 2026-07-03):**  
+Live-Regressionstest am SMA STP SE 10.0 (Daten aus dem HA-Recorder): der ursprüngliche Ansatz für "Akku
+Netzladen" (`CmpBMS.OpMod` 2289 + `BatChaMinW` / 40793 auf die volle dynamische Ladeleistung gesetzt)
+funktionierte nicht.
+Der WR ignorierte `BatChaMinW` zunächst 5,5 Minuten komplett (0 W Ladung).
+Danach kippte er in einen internen Modus und lud mit voller PV-Leistung (6,6–6,7 kW), wobei auch
+`BatChaMaxW` (40795) ignoriert wurde – Export fiel dabei auf 0.
+Der reine 40149/40151-Sollwertpfad (siehe "Sollwert Batterieleistung direkt" oben, wie im Modus "Akku
+schnell Laden" genutzt) war im selben Test punktstabil: 9 s nach Umschaltung exakt auf dem Sollwert.
+
+**Reaktion im Adapter:** "Akku Netzladen" nutzt ab v1.5.0 deshalb dieselbe 40151/40149-Kommandoschiene wie
+"Akku schnell Laden" statt der BMS-Leistungsgrenzen-Register (40793–40801/41259).
+Der oben dokumentierte v1.3.0-Spike-Mechanismus betraf ausschließlich den BMS-Leistungsgrenzen-Pfad und ist
+für "Akku Netzladen" damit nicht mehr relevant – der 40151/40149-Pfad zeigte im Live-Test kein Spike-Verhalten.
+Eine Restunsicherheit bleibt: der konkrete Übergang "nur Entladen"/"Pause" → "Akku Netzladen" wurde noch
+nicht gezielt auf einen Leistungs-Spike geprüft.
+Empfehlung für Produktiv-Rollout: diesen Übergang einmal beobachten, auch wenn das Restrisiko nach der
+Mechanik-Umstellung als gering einzuschätzen ist.
+
+**Für eigene Nutzung der BMS-Leistungsgrenzen-Register (40793–40801):** wer `BatChaMinW`/`BatChaMaxW` für
+andere Zwecke einsetzt, sollte das Verhalten am eigenen WR selbst verifizieren und sich nicht blind auf die
+dokumentierten Grenzwerte verlassen – der Befund oben deutet darauf hin, dass der WR diese Register nicht in
+jedem internen Betriebszustand befolgt.
 
 ---
 
