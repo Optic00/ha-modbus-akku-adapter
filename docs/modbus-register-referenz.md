@@ -197,7 +197,7 @@ Diese Register steuern den dynamischen Betrieb. Der WR regelt dabei **selbststä
 
 > 💡 Register 40016 auf dem **SHM2** ist der empfohlene Weg um PV-Produktion bei negativen Strompreisen zu drosseln. Logik: Batterie wird zuerst vollgeladen, erst danach werden die Solarmodule gedrosselt. Ohne SHM2 ist eine vollständige DC-seitige Abschaltung nur mit einem physischen Trennschalter möglich.
 >
-> 🔧 **Ohne SHM2:** Direkt am WR lässt sich die Wirkleistung über **41255 `WNomPrc`** (normierte Wirkleistungsbegrenzung in %) drosseln – 0 % ≈ keine AC-Abgabe. Damit wird die PV-Produktion AC-seitig begrenzt (bei vollem Akku also faktisch gedrosselt). ⚠️ 41255 ist ein **RW-/persistenter Parameter** – nur **ereignisbasiert** schreiben (z.B. beim Wechsel in/aus dem Negativpreis-Fenster), **nicht zyklisch** (Flash-Verschleiß). Dies ist der wahrscheinlichste Hebel für die geplante „PV-Produktionspause" auf Anlagen ohne SHM2 und entspricht dem Roadmap-Punkt 41255.
+> 🔧 **Ohne SHM2:** Direkt am WR lässt sich die Wirkleistung über **41255 `WNomPrc`** (normierte Wirkleistungsbegrenzung in %) drosseln – 0 % ≈ keine AC-Abgabe. Damit wird die PV-Produktion AC-seitig begrenzt (bei vollem Akku also faktisch gedrosselt). ⚠️ 41255 ist ein **RW-/persistenter Parameter** – nur **ereignisbasiert** schreiben (z.B. beim Wechsel in/aus dem Negativpreis-Fenster), **nicht zyklisch** (Flash-Verschleiß). Dies ist der wahrscheinlichste Hebel für die geplante „PV-Produktionspause" auf Anlagen ohne SHM2 und entspricht dem Roadmap-Punkt „Wirkleistungsbegrenzung bei negativen Strompreisen (Register 41255)" im Schwesterprojekt [`ha-opti-akkusteuerung`](https://github.com/Optic00/ha-opti-akkusteuerung#roadmap).
 
 ---
 
@@ -357,4 +357,4 @@ Spike. Ob der WR auch hier eine driftende interne Ladeleistungsgrenze zeigt, ist
 
 ---
 
-*Letzte Aktualisierung: Mai 2026 – Ergänzungen willkommen via Pull Request oder Issue.*
+*Letzte Aktualisierung: Juli 2026 – Ergänzungen willkommen via Pull Request oder Issue.*
