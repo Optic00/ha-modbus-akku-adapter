@@ -53,7 +53,7 @@ Strategie  →  input_select.akkusteuerung_modus  →  [ DIESES BLUEPRINT ]  →
 |---|---|---|
 | Adapter-Repo | Modbus-Hub zum WR | YAML (`configuration.yaml`/Package) |
 | Adapter-Repo (**oder** Opti-Repo, siehe unten) | Modus-Dropdown + 6 Leistungs-Helfer | GUI oder YAML (Package) |
-| Adapter-Repo (**oder** Opti-Repo, siehe unten) | 2 Write-on-Change-Helfer (`input_text`/`input_datetime`) | GUI oder YAML (Package) |
+| Adapter-Repo (**oder** Opti-Repo, siehe unten) | 2 Schreib-Diagnose-Helfer (`input_text`/`input_datetime`) | GUI oder YAML (Package) |
 | Adapter-Repo | Blueprint (übersetzt Modus → Modbus) | Blueprint-Import |
 | Opti-Repo | `opti_mapping.yaml` (Hardware → kanonische Sensoren) | YAML, von dir ausgefüllt |
 | Opti-Repo | `opti_derived.yaml` (Score, Ziel-SoC, Preisniveau) | YAML (Package) |
@@ -73,7 +73,7 @@ Strategie  →  input_select.akkusteuerung_modus  →  [ DIESES BLUEPRINT ]  →
 
 > ⚠️ **Helfer nur aus einer Quelle:** Bei kombinierter Nutzung liefert
 > `ha-opti-akkusteuerung/packages/sma_helpers.yaml` bereits alle Helfer (Modus-Dropdown,
-> 6 Leistungs-Helfer, 2 Write-on-Change-Helfer). Die Adapter-GUI-Anleitung bzw. das
+> 6 Leistungs-Helfer, 2 Schreib-Diagnose-Helfer). Die Adapter-GUI-Anleitung bzw. das
 > Adapter-Package dann NICHT zusätzlich verwenden — zwei Packages mit denselben
 > Entity-IDs führen zu einem Duplicate-Key-Fehler im HA-Log. Nutzt du den Adapter
 > **ohne** das Opti-Repo (eigene Strategie), gilt die Adapter-Anleitung normal.
@@ -83,7 +83,7 @@ Strategie  →  input_select.akkusteuerung_modus  →  [ DIESES BLUEPRINT ]  →
 | Strategie-Feature | benötigter Adapter-Stand |
 |---|---|
 | Peak-Allokation / Modus „Akku Netzladen" | `ha-modbus-akku-adapter` >= v1.5.0 |
-| Alle übrigen Modi (Automatisch, Dynamisch, Pause, nur Laden, nur Entladen, schnell Laden, schnell Entladen, 0.2C Laden) | `ha-modbus-akku-adapter` >= v1.2.0 (Write-on-Change-Helfer) |
+| Alle übrigen Modi (Automatisch, Dynamisch, Pause, nur Laden, nur Entladen, schnell Laden, schnell Entladen, 0.2C Laden) | `ha-modbus-akku-adapter` >= v1.2.0 (Schreib-Diagnose-Helfer; seit v1.6.0 schreibt der Adapter unconditional) |
 
 ---
 
@@ -186,7 +186,7 @@ Template-Sensor, der einfach eine Watt-Zahl ausgibt.
 > als YAML in [`examples/akkusteuerung_helpers.example.yaml`](examples/akkusteuerung_helpers.example.yaml) –
 > dort sind die Entity-IDs garantiert korrekt.
 
-**e) Zwei Helfer für Write-on-Change (ab v1.2.0)** – der Adapter schreibt die
+**e) Zwei Schreib-Diagnose-Helfer (ab v1.2.0)** – der Adapter protokolliert darin die
 BMS-Wertregister jetzt nur noch bei Änderung oder abgelaufenem Keepalive. Dafür
 braucht er zwei Helfer, die er selbst pflegt (nichts manuell eintragen):
 
@@ -200,7 +200,7 @@ Auch hier gilt: per Copy-Paste aus
 geht es schneller als per GUI.
 
 > ⚠️ **Nur verwenden, wenn du `ha-opti-akkusteuerung` NICHT nutzt:** Das Opti-Repo liefert
-> Modus-Dropdown, die 6 Leistungs-Helfer und die 2 Write-on-Change-Helfer bereits über
+> Modus-Dropdown, die 6 Leistungs-Helfer und die 2 Schreib-Diagnose-Helfer bereits über
 > `packages/sma_helpers.yaml` (siehe [„Wer liefert was"](#wer-liefert-was--und-in-welcher-reihenfolge)
 > oben). Zwei Packages mit derselben Entity-ID führen zu einem Duplicate-Key-Fehler im HA-Log, und eine der beiden Definitionen wird verworfen — leicht zu übersehen, wenn man die Logs nicht prüft. Wer beide Repos zusammen nutzt: nur die
 > `sma_helpers.yaml` aus dem Opti-Repo aktivieren, hier nichts zusätzlich einbinden.
@@ -227,9 +227,11 @@ Entity-Namen an:
 - Batterie-Nennkapazität (`battery_capacity_sensor`)
 - Dynamik-Sensor (`dynamic_charge_strength_sensor`)
 - Modus-Select (`mode_select`)
-- die beiden **Write-on-Change-Helfer** (`last_write_value_helper`,
+- die beiden **Schreib-Diagnose-Helfer** (`last_write_value_helper`,
   `last_write_time_helper`, Schritt 2e)
-- **Keepalive-Intervall** (`keepalive_seconds`, Default 180s – Herstellerlimit 300s)
+- ~~Keepalive-Intervall~~ (`keepalive_seconds`): **seit v1.6.0 deprecated und ohne
+  Funktion** – der Adapter schreibt den vollen Registersatz bei jedem Lauf
+  unconditional (Zyklus alle 2 Minuten, SMA-Fenster 300 s)
 
 > 💡 **Stabile URL statt `main`:** Die Tabelle unten verlinkt auf den aktuellen Release-Tag
 > (`v1.6.0`), nicht auf den `main`-Branch. `main` kann zwischenzeitlich unfertige

@@ -172,7 +172,7 @@ variables:
 triggers:
   - entity_id:
       - !input mode_select
-      - !input dynamic_charge_strength_sensor   # Drosselung sofort übernehmen, nicht erst beim /4-min-Tick
+      - !input dynamic_charge_strength_sensor   # Drosselung sofort übernehmen, nicht erst beim /2-min-Tick
       - input_number.akkusteuerung_entladestaerke_soll
       - input_number.akkusteuerung_ladestaerke_soll
       - input_number.akkusteuerung_min_ladestaerke
@@ -345,6 +345,45 @@ actions:
           value: ""
       - stop: fertig
 
+  # 0.2C nutzt dieselbe 40151/40149-Kommandoschiene und steht deshalb wie die
+  # anderen Kommando-Schienen VOR dem Standardpfad (v1.6.0-Fix): vorher lief er
+  # dahinter und jeder unconditional Lauf deaktivierte die Sollwert-Schiene
+  # (40151=803) kurz, bevor 802/40149 sie wieder aktivierte.
+  - alias: Bei "Akku 0.2C Laden"
+    if:
+      - condition: state
+        entity_id: !input mode_select
+        state: "Akku 0.2C Laden"
+    then:
+      - data:
+          hub: !input modbus_hub
+          address: 40151
+          slave: 3
+          value:
+            - 0
+            - 802
+        action: modbus.write_register
+      - delay:
+          seconds: 2
+      # 0.2C-Ladeleistung = 0,2 × Batterie-Nennkapazität (Wh) → W; kein manueller Helfer nötig.
+      # Kapazität nicht verfügbar → 0 → 65535-0=65535 → ~1 W (praktisch null, harmlos).
+      - data:
+          hub: !input modbus_hub
+          address: 40149
+          slave: 3
+          value:
+            - 65535
+            - >-
+              {{ 65535 - ((0.2 * states(capacity_entity) | float(0)) | round(0) | int) }}
+        action: modbus.write_register
+      - action: input_text.set_value
+        continue_on_error: true
+        target:
+          entity_id: "{{ snapshot_helper }}"
+        data:
+          value: ""
+      - stop: fertig
+
   # --- Standardpfad: Fremdsteuerung deaktivieren (Sollwert-Schiene aus), dann
   #     IMMER den vollen BMS-Registersatz schreiben - wie die bewaehrte Legacy-
   #     Automation "Akkusteuerung 2.0" (unconditional, /2-min-Zyklus). Die
@@ -494,32 +533,5 @@ actions:
             - 1438
         action: modbus.write_register
 
-  - alias: Bei "Akku 0.2C Laden"
-    if:
-      - condition: state
-        entity_id: !input mode_select
-        state: "Akku 0.2C Laden"
-    then:
-      - data:
-          hub: !input modbus_hub
-          address: 40151
-          slave: 3
-          value:
-            - 0
-            - 802
-        action: modbus.write_register
-      - delay:
-          seconds: 2
-      # 0.2C-Ladeleistung = 0,2 × Batterie-Nennkapazität (Wh) → W; kein manueller Helfer nötig.
-      # Kapazität nicht verfügbar → 0 → 65535-0=65535 → ~1 W (praktisch null, harmlos).
-      - data:
-          hub: !input modbus_hub
-          address: 40149
-          slave: 3
-          value:
-            - 65535
-            - >-
-              {{ 65535 - ((0.2 * states(capacity_entity) | float(0)) | round(0) | int) }}
-        action: modbus.write_register
 
 mode: single

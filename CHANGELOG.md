@@ -42,6 +42,13 @@ Settling-Deckel, Diagnose-Helfer).
   deklariert, damit bestehende Automationen nicht brechen). Die Helfer
   `letzter_schreibwert`/`letzter_schreibzeitpunkt` sind reine Diagnose.
 
+### Behoben
+- **Modus "Akku 0.2C Laden" vor den Standardpfad gezogen** (mit `stop`, wie die
+  anderen 40151/40149-Kommandoschienen): vorher lief der Branch hinter dem
+  Standardpfad, wodurch jeder Lauf die Sollwert-Schiene erst deaktivierte
+  (40151=803) und dann wieder aktivierte - mit den Unconditional-Writes aus
+  diesem Release waere das alle 2 Minuten passiert (Codex-Review-Finding).
+
 ## [1.5.0] - 2026-07-03 - Adapter `sma_stp_se`: neuer Modus "Akku Netzladen"
 
 Additives MINOR-Release (Contract-Erweiterung um einen neuen Modus, kein Breaking
