@@ -232,19 +232,15 @@ Entity-Namen an:
 - **Keepalive-Intervall** (`keepalive_seconds`, Default 180s – Herstellerlimit 300s)
 
 > 💡 **Stabile URL statt `main`:** Die Tabelle unten verlinkt auf den aktuellen Release-Tag
-> (`v1.4.0`), nicht auf den `main`-Branch. `main` kann zwischenzeitlich unfertige
+> (`v1.5.0`), nicht auf den `main`-Branch. `main` kann zwischenzeitlich unfertige
 > Zwischenstände enthalten. Für ein Update auf eine neue Version: Blueprint erneut mit der
 > URL des neuen Tags importieren (HA zeigt dann den Diff). Alle Releases: siehe
 > [CHANGELOG.md](CHANGELOG.md) bzw. [Tags](https://github.com/Optic00/ha-modbus-akku-adapter/tags).
 >
-> Für den Modus „Akku Netzladen" (Peak-Allokation) wird der kommende `v1.5.0`-Tag
-> benötigt – die Raw-URL unten zeigt noch auf `v1.4.0` und wird nach dem Release
-> umgestellt.
-<!-- TODO: nach v1.5.0-Tag URL aktualisieren -->
 
-| WR-Familie | Blueprint | Raw-URL (Import, `v1.4.0`) | Status |
+| WR-Familie | Blueprint | Raw-URL (Import, `v1.5.0`) | Status |
 |---|---|---|---|
-| **SMA STP SE Hybrid** | `sma_stp_se_adapter.yaml` | `https://raw.githubusercontent.com/Optic00/ha-modbus-akku-adapter/v1.4.0/blueprints/automation/akku_adapter/sma_stp_se_adapter.yaml` | ✅ live getestet |
+| **SMA STP SE Hybrid** | `sma_stp_se_adapter.yaml` | `https://raw.githubusercontent.com/Optic00/ha-modbus-akku-adapter/v1.5.0/blueprints/automation/akku_adapter/sma_stp_se_adapter.yaml` | ✅ live getestet |
 | SMA SBS | `sma_sbs_adapter.yaml` | – | 🧪 geplant (Register-Map abweichend) |
 | Andere (z. B. Huawei) | – | – | 💬 offen |
 
