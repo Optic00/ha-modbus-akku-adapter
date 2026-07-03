@@ -12,6 +12,36 @@ unabhängig weiterentwickelt werden können (Versions-Skew vermeiden).
 - `sma_sbs_adapter.yaml` (abweichendes Register-Map, gleicher Contract).
 - Capability-Schicht (Adapter meldet Fähigkeiten) – erst mit erstem Nicht-SMA-Adapter.
 
+## [1.6.0] - 2026-07-03 - Adapter `sma_stp_se`: Schreibverhalten wie Legacy "Akkusteuerung 2.0"
+
+Hintergrund: Live-Befunde vom 2./3.7. (WR faellt in "nur Entladen" ins eigenmaechtige
+Volllladen, ~300-320 s nach dem letzten wertaendernden Write, waehrend identische
+zyklische Refreshes wirkungslos blieben - siehe docs/modbus-register-referenz.md und
+den evcc-Issue-Entwurf). Die Legacy-Automation "Akkusteuerung 2.0" schrieb ein Jahr
+lang stabil: unconditional, voller Registersatz, Dynamisch ueber 40236. Dieses
+Release spiegelt das bewaehrte Schreibverhalten exakt und behaelt die neuen
+Qualitaetsmerkmale (konfigurierbares Status-Gate, Netzladen-/Schnell-Schienen,
+Settling-Deckel, Diagnose-Helfer).
+
+### Geaendert
+- **Unconditional-Writes statt Write-on-Change/Keepalive:** der volle BMS-Registersatz
+  (40151=803, 40793/40795/40797/40799/40801 + OpMod) wird bei JEDEM Lauf geschrieben,
+  wie bei der Legacy-Automation. Die Register sind Write-Only-Sollwerte, identisches
+  Wiederschreiben ist unschaedlich. Das `write_needed`-Gate und der
+  /1-min-Keepalive-Check entfallen.
+- **Zyklischer Trigger /2 min statt /4 min:** haelt das 300-s-Fenster der
+  SMA-Fremdsteuerung auch dann ein, wenn ein einzelner Lauf ausfaellt
+  (mode: single-Kollision oder Status-Gate).
+- **Modus "Akku Dynamisch" schreibt OpMod 1438 auf Register 40236** (SMA-Adresse)
+  statt 41259 (Sunspec) - exakt wie die Legacy-Automation. Pause/nur Laden/
+  nur Entladen bleiben auf 41259 (ebenfalls wie Legacy).
+- **Delays zwischen Registerschreibvorgaengen 500 ms statt 1 s:** kompletter Satz in
+  ~3,5 s statt ~7 s, mehr Marge zur SMA-Anforderung "alle Werte innerhalb von 10 s".
+  Die 2-s-Wartezeit nach Aktivierung der 40151/40149-Kommandoschiene bleibt.
+- Blueprint-Input `keepalive_seconds` ist DEPRECATED und ohne Funktion (bleibt
+  deklariert, damit bestehende Automationen nicht brechen). Die Helfer
+  `letzter_schreibwert`/`letzter_schreibzeitpunkt` sind reine Diagnose.
+
 ## [1.5.0] - 2026-07-03 - Adapter `sma_stp_se`: neuer Modus "Akku Netzladen"
 
 Additives MINOR-Release (Contract-Erweiterung um einen neuen Modus, kein Breaking

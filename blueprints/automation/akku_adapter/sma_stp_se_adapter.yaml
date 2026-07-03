@@ -92,33 +92,37 @@ blueprint:
           domain: input_select
 
     last_write_value_helper:
-      name: "Helfer: Letzter Schreibwert (Write-on-Change)"
+      name: "Helfer: Letzter Schreibwert (Diagnose)"
       description: >
         input_text-Helfer, der den Snapshot der zuletzt geschriebenen BMS-Wertregister
-        speichert (40793/40795/40797/40799/40801). Wird vom Adapter automatisch
-        gepflegt, nicht manuell setzen. Siehe examples/akkusteuerung_helpers.example.yaml.
+        speichert (40793/40795/40797/40799/40801). Seit v1.6.0 reine Diagnose
+        (der Adapter schreibt unconditional); wird automatisch gepflegt, nicht
+        manuell setzen. Siehe examples/akkusteuerung_helpers.example.yaml.
       default: input_text.akkusteuerung_modbus_letzter_schreibwert
       selector:
         entity:
           domain: input_text
 
     last_write_time_helper:
-      name: "Helfer: Letzter Schreibzeitpunkt (Write-on-Change)"
+      name: "Helfer: Letzter Schreibzeitpunkt (Diagnose)"
       description: >
         input_datetime-Helfer (Datum + Uhrzeit), der den Zeitpunkt des letzten
-        tatsächlichen BMS-Register-Schreibvorgangs speichert. Wird vom Adapter
-        automatisch gepflegt. Siehe examples/akkusteuerung_helpers.example.yaml.
+        BMS-Register-Schreibvorgangs speichert. Seit v1.6.0 reine Diagnose;
+        wird automatisch gepflegt. Siehe examples/akkusteuerung_helpers.example.yaml.
       default: input_datetime.akkusteuerung_modbus_letzter_schreibzeitpunkt
       selector:
         entity:
           domain: input_datetime
 
     keepalive_seconds:
-      name: "Keepalive-Intervall (Sekunden)"
+      name: "Keepalive-Intervall (Sekunden) - DEPRECATED, ohne Funktion"
       description: >
-        Maximales Intervall, nach dem die BMS-Wertregister (40793-40801) auch ohne
-        Wertänderung erneut geschrieben werden (sonst läuft die SMA-Fremdsteuerung
-        aus). Hersteller-Limit: 300s. Default 180s lässt Sicherheitsmarge.
+        Seit v1.6.0 ohne Funktion: der Adapter schreibt den vollen Registersatz
+        bei JEDEM Lauf unconditional (wie die bewährte Legacy-Automation
+        "Akkusteuerung 2.0"), der zyklische Trigger läuft alle 2 Minuten und
+        hält damit das 300-s-Fenster der SMA-Fremdsteuerung auch dann ein,
+        wenn ein einzelner Lauf ausfällt. Der Input bleibt nur deklariert,
+        damit bestehende Automationen beim Blueprint-Update nicht brechen.
       default: 180
       selector:
         number:
@@ -136,9 +140,7 @@ variables:
   capacity_entity: !input battery_capacity_sensor
   snapshot_helper: !input last_write_value_helper
   timestamp_helper: !input last_write_time_helper
-  keepalive_s: !input keepalive_seconds
   mode_select_entity: !input mode_select
-  early_stop_modes: ['Akku Automatisch', 'Akku schnell Laden', 'Akku schnell Entladen', 'Akku Netzladen']
   # Einschwing-Schutz: nach einem Wechsel IN "Akku Dynamisch" hat der WR beobachtet
   # (2x live reproduziert, 2026-07-01) bis zu ~5 Minuten eine unklare interne
   # Ladeleistungsgrenze (vermutlich Drift auf Maximalwert waehrend "nur Entladen").
@@ -162,18 +164,10 @@ variables:
   v_40795: "{{ [v_40795_raw, dynamisch_settling_cap_w] | min if dynamisch_settling else v_40795_raw }}"
   v_40797: "{{ [states('input_number.akkusteuerung_min_entladestaerke') | int(0), states('input_number.akkusteuerung_max_entladestaerke') | int(0)] | min }}"
   v_40799: "{{ states('input_number.akkusteuerung_max_entladestaerke') | int(0) }}"
-  # Modus ist Teil des Snapshots: JEDER Moduswechsel macht current_snapshot
-  # unterschiedlich zum zuletzt gespeicherten Wert und erzwingt damit einen
-  # sofortigen Rewrite der BMS-Wertregister in derselben Ausfuehrung, statt bis
-  # zum naechsten Keepalive-Zyklus zu warten (bestaetigte Root-Cause-Komponente).
+  # Snapshot (inkl. Modus) ist seit v1.6.0 reine Diagnose: der Adapter schreibt
+  # bei jedem Lauf unconditional. Die Register sind Write-Only-Sollwerte, kein
+  # persistierter Speicher - haeufiges identisches Schreiben ist unschaedlich.
   current_snapshot: "{{ [v_40793, v_40795, v_40797, v_40799, 0, states(mode_select_entity)] | join('|') }}"
-  write_needed: >-
-    {% set valid_dt = state_attr(timestamp_helper, 'has_date') and state_attr(timestamp_helper, 'has_time') %}
-    {% set last_ts = as_timestamp(states(timestamp_helper), none) if valid_dt else none %}
-    {{ trigger.id == 'ha_start'
-       or current_snapshot != states(snapshot_helper)
-       or last_ts is none
-       or (now().timestamp() - last_ts) > (keepalive_s | int(0)) }}
 
 triggers:
   - entity_id:
@@ -191,12 +185,11 @@ triggers:
       seconds: 2
     trigger: state
 
-  - minutes: /4
+  # /2 min statt /4 (Legacy): SMA verlangt zyklische Erneuerung max. alle 300 s.
+  # Bei /2 min bleibt das Fenster selbst dann eingehalten, wenn ein einzelner
+  # Lauf ausfaellt (mode: single-Kollision oder Status-Gate) - bei /4 min nicht.
+  - minutes: /2
     trigger: time_pattern
-
-  - minutes: /1
-    trigger: time_pattern
-    id: keepalive_check
 
   - event: start
     trigger: homeassistant
@@ -217,10 +210,6 @@ conditions:
   # werden, wenn sie im eigenen Setup regelmaessig auftreten.
   - condition: template
     value_template: "{{ states(inverter_status_entity) in inverter_ok_states }}"
-  - condition: template
-    value_template: >-
-      {{ trigger.id != 'keepalive_check'
-         or (states(mode_select_entity) not in early_stop_modes and write_needed) }}
 
 actions:
   - alias: Wenn Akku Automatik
@@ -356,7 +345,12 @@ actions:
           value: ""
       - stop: fertig
 
-  # --- Standardpfad: Fremdsteuerung aktivieren (immer, kein Write-on-Change) ---
+  # --- Standardpfad: Fremdsteuerung deaktivieren (Sollwert-Schiene aus), dann
+  #     IMMER den vollen BMS-Registersatz schreiben - wie die bewaehrte Legacy-
+  #     Automation "Akkusteuerung 2.0" (unconditional, /2-min-Zyklus). Die
+  #     Register sind Write-Only-Sollwerte: identisches Wiederschreiben ist
+  #     unschaedlich. Delays 500 ms statt 1 s (SMA: kompletter Satz muss
+  #     innerhalb von 10 s gesetzt sein - so bleibt mehr Marge). ---
   - data:
       hub: !input modbus_hub
       address: 40151
@@ -366,74 +360,69 @@ actions:
         - 803
     action: modbus.write_register
   - delay:
-      seconds: 1
+      milliseconds: 500
 
-  # --- BMS-Wertregister: nur bei Aenderung oder abgelaufenem Keepalive schreiben ---
-  - if:
-      - condition: template
-        value_template: "{{ write_needed }}"
-    then:
-      - data:
-          hub: !input modbus_hub
-          address: 40793
-          slave: 3
-          value:
-            - 0
-            - "{{ v_40793 }}"
-        action: modbus.write_register
-      - delay:
-          seconds: 1
-      - alias: Schreib die dynamische Ladestärke auf Modbus
-        data:
-          hub: !input modbus_hub
-          address: 40795
-          slave: 3
-          value:
-            - 0
-            - "{{ v_40795 }}"
-        action: modbus.write_register
-      - delay:
-          seconds: 1
-      - data:
-          hub: !input modbus_hub
-          address: 40797
-          slave: 3
-          value:
-            - 0
-            - "{{ v_40797 }}"
-        action: modbus.write_register
-      - delay:
-          seconds: 1
-      - data:
-          hub: !input modbus_hub
-          address: 40799
-          slave: 3
-          value:
-            - 0
-            - "{{ v_40799 }}"
-        action: modbus.write_register
-      - delay:
-          seconds: 1
-      - data:
-          hub: !input modbus_hub
-          address: 40801
-          slave: 3
-          value:
-            - 0
-            - 0
-        action: modbus.write_register
-      - action: input_datetime.set_datetime
-        continue_on_error: true
-        target:
-          entity_id: "{{ timestamp_helper }}"
-        data:
-          timestamp: "{{ now().timestamp() }}"
-      - action: input_text.set_value
-        continue_on_error: true
-        target:
-          entity_id: "{{ snapshot_helper }}"
-        data:
-          value: "{{ current_snapshot }}"
+  - data:
+      hub: !input modbus_hub
+      address: 40793
+      slave: 3
+      value:
+        - 0
+        - "{{ v_40793 }}"
+    action: modbus.write_register
+  - delay:
+      milliseconds: 500
+  - alias: Schreib die dynamische Ladestärke auf Modbus
+    data:
+      hub: !input modbus_hub
+      address: 40795
+      slave: 3
+      value:
+        - 0
+        - "{{ v_40795 }}"
+    action: modbus.write_register
+  - delay:
+      milliseconds: 500
+  - data:
+      hub: !input modbus_hub
+      address: 40797
+      slave: 3
+      value:
+        - 0
+        - "{{ v_40797 }}"
+    action: modbus.write_register
+  - delay:
+      milliseconds: 500
+  - data:
+      hub: !input modbus_hub
+      address: 40799
+      slave: 3
+      value:
+        - 0
+        - "{{ v_40799 }}"
+    action: modbus.write_register
+  - delay:
+      milliseconds: 500
+  - data:
+      hub: !input modbus_hub
+      address: 40801
+      slave: 3
+      value:
+        - 0
+        - 0
+    action: modbus.write_register
+  - action: input_datetime.set_datetime
+    continue_on_error: true
+    target:
+      entity_id: "{{ timestamp_helper }}"
+    data:
+      timestamp: "{{ now().timestamp() }}"
+  - action: input_text.set_value
+    continue_on_error: true
+    target:
+      entity_id: "{{ snapshot_helper }}"
+    data:
+      value: "{{ current_snapshot }}"
 
   - alias: Bei "Akku Pause"
     if:
@@ -457,7 +446,7 @@ actions:
         state: "Akku nur Laden"
     then:
       - delay:
-          seconds: 1
+          milliseconds: 500
       - data:
           hub: !input modbus_hub
           address: 41259
@@ -474,7 +463,7 @@ actions:
         state: "Akku nur Entladen"
     then:
       - delay:
-          seconds: 1
+          milliseconds: 500
       - data:
           hub: !input modbus_hub
           address: 41259
@@ -491,10 +480,14 @@ actions:
         state: "Akku Dynamisch"
     then:
       - delay:
-          seconds: 1
+          milliseconds: 500
+      # 40236 = SMA-Adresse von CmpBMS.OpMod (41259 = Sunspec-Duplikat).
+      # Die Legacy-Automation "Akkusteuerung 2.0" schrieb Dynamisch ueber
+      # 40236 und lief damit ein Jahr stabil - wir spiegeln das exakt
+      # (Community: kohaku, PV-Forum Thread 206718 S. 23).
       - data:
           hub: !input modbus_hub
-          address: 41259
+          address: 40236
           slave: 3
           value:
             - 0
