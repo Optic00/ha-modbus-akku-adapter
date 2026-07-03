@@ -12,6 +12,94 @@ unabhängig weiterentwickelt werden können (Versions-Skew vermeiden).
 - `sma_sbs_adapter.yaml` (abweichendes Register-Map, gleicher Contract).
 - Capability-Schicht (Adapter meldet Fähigkeiten) – erst mit erstem Nicht-SMA-Adapter.
 
+## [1.5.0] - 2026-07-03 - Adapter `sma_stp_se`: neuer Modus "Akku Netzladen"
+
+Additives MINOR-Release (Contract-Erweiterung um einen neuen Modus, kein Breaking
+Change an bestehenden Modi). Hintergrund: der bisherige Modus "Akku nur Laden"
+(`CmpBMS.OpMod` 2289) ist eine reine Entladesperre - Netzbezug entsteht dabei nur,
+wenn `BatChaMinW` (Register 40793) manuell auf einen Wert > 0 gesetzt wird. Für
+gezieltes, erzwungenes Netzladen (z. B. Negativpreis-Fenster oder Peak-Vorladen in
+`ha-opti-akkusteuerung`) fehlte bisher ein eigener Modus.
+
+### Hinzugefügt
+- **Neuer Modus `Akku Netzladen`**: nutzt dieselbe 40151/40149-Kommandoschiene wie
+  "Akku schnell Laden" (Externe Steuerung aktivieren, dann Ladeleistung direkt auf
+  40149 schreiben).
+  Die Ladeleistung kommt aber aus der dynamischen Strategie (`dyn_charge_entity`)
+  statt aus dem manuellen `akkusteuerung_ladestaerke_soll`.
+  Damit wird die Anlage gezwungen, mit dem dynamisch berechneten Sollwert aus dem
+  Netz zu laden - akkuschonend über dieselbe SoC-Taper-/Score-/Temperaturlogik wie
+  im Modus "Akku Dynamisch", nur ohne Entlade-Möglichkeit.
+  - Der ursprüngliche Ansatz über `CmpBMS.OpMod` 2289 + `BatChaMinW` (40793) wurde
+    vor dem Release live getestet und **verworfen**.
+    Siehe "Geändert" unten.
+- Neue `input_select`-Option `Akku Netzladen` (9. Option) in
+  `examples/akkusteuerung_helpers.example.yaml`.
+- **Neuer Input `inverter_ok_states`** (Sicherheitsfix, Community-Report): das
+  WR-Status-Gate akzeptierte bisher hart nur den Sensorwert `"Ok"`. Meldet der WR
+  einen anderen Status (z. B. `2119` = Abregelung wegen der 70%-Einspeisebegrenzung,
+  oder einen Code, den ein selbstgebauter Mapping-Helfer nicht kennt), blockierte
+  das ALLE Automations-Läufe inklusive Keepalive - die SMA-Fremdsteuerung lief dann
+  in ihren Timeout und der WR fiel in seinen internen Modus zurück (lud/entlud
+  eigenmächtig, live bestätigt: WR lud mit ~7 kW trotz aktivem Modus "Akku nur
+  Entladen"). Das Status-Gate ist jetzt eine konfigurierbare Liste
+  (`inverter_ok_states`, Default `["Ok"]`) statt einer hart codierten
+  State-Bedingung.
+
+### Geändert
+- **Mechanik von "Akku Netzladen" nach Live-Regressionstest umgestellt** (SMA STP SE
+  10.0, 2026-07-03, Daten aus dem HA-Recorder).
+  Der zuerst gebaute Ansatz über `CmpBMS.OpMod` 2289 + `BatChaMinW` (40793)
+  funktionierte am realen WR nicht.
+  Er ignorierte `BatChaMinW` zunächst 5,5 Minuten komplett (0 W Ladung), kippte dann
+  in einen internen Modus und lud mit voller PV-Leistung (6,6-6,7 kW) unter
+  Missachtung von `BatChaMaxW`, Export brach dabei auf 0 ein.
+  Die 40151/40149-Kommandoschiene von "Akku schnell Laden" regelte im selben Test
+  dagegen punktstabil auf den Sollwert (9 s nach Umschaltung exakt am Ziel).
+  "Akku Netzladen" nutzt deshalb jetzt dieselbe Kommandoschiene statt der
+  BMS-Leistungsgrenzen-Register.
+  Details und Einordnung als Community-Wissen: `docs/modbus-register-referenz.md`,
+  Abschnitt "Bekannte Probleme & Hinweise".
+- Blueprint-Beschreibung, README-Optionslisten und `docs/modus-contract.md` um den
+  neuen Modus ergänzt.
+- WR-Status-Bedingung von `condition: state` (`== "Ok"`) auf `condition: template`
+  (`state in inverter_ok_states`) umgestellt.
+
+### Nicht-breaking
+- Bestehende Modi (`Akku nur Laden` u. a.) sind unverändert - der neue Modus ist ein
+  zusätzlicher `if`-Branch. Wer aktualisiert, muss lediglich die neue
+  `input_select`-Option `Akku Netzladen` in seinem Modus-Dropdown ergänzen, um sie
+  nutzen zu können; ohne die Option läuft der Adapter wie bisher weiter.
+- `inverter_ok_states` hat den Default `["Ok"]` - bei unverändertem Input verhält
+  sich das WR-Status-Gate exakt wie vorher.
+
+### Bekanntes offenes Risiko
+- Der 500-W-Settling-Deckel aus v1.3.0 (Schutz vor Ladeleistungs-Spikes nach
+  Moduswechsel) ist weiterhin nur an `Akku Dynamisch` gebunden und greift NICHT bei
+  `Akku Netzladen`.
+  Das ist nach der Mechanik-Umstellung unkritischer als zunächst angenommen: der
+  v1.3.0-Spike trat ausschließlich über den BMS-Leistungsgrenzen-Pfad
+  (40793-40801/41259) auf, den "Akku Netzladen" jetzt gar nicht mehr benutzt.
+  Der 40151/40149-Pfad von "Akku schnell Laden" war im Live-Test nie spike-betroffen -
+  punktstabil auf den Sollwert innerhalb von 9 s.
+  Eine Restunsicherheit bleibt, da der Übergang aus "nur Entladen"/"Pause" nach
+  "Akku Netzladen" selbst noch nicht gezielt auf Spikes getestet wurde; das wird vor
+  Produktiv-Rollout empfohlen (siehe `docs/modbus-register-referenz.md`, Abschnitt
+  "Bekannte Probleme & Hinweise").
+
+## [1.4.0] – 2026-07-01 — Adapter `sma_stp_se`: kanonischer Sensor-Default
+
+Additives MINOR-Release (Contract unverändert). Der Default-Wert des Inputs
+`dynamic_charge_strength_sensor` wechselt von `sensor.akkusteuerung_dynamische_ladestaerke`
+auf den kanonischen Namen `sensor.opti_charge_power_w` (siehe `ha-opti-akkusteuerung`
+Canonical-Layer). **Nicht-breaking:** Home Assistant speichert den beim Blueprint-Import
+gewählten Wert pro Automations-Instanz — bestehende Automationen sind von der
+Default-Änderung nicht betroffen, nur Neuimporte sehen den neuen Vorschlagswert.
+
+### Geändert
+- Blueprint-Input `dynamic_charge_strength_sensor`: Default auf `sensor.opti_charge_power_w`,
+  Beschreibungstext ergänzt (kanonischer Name bei Nutzung von `ha-opti-akkusteuerung`).
+
 ## [1.3.0] – 2026-07-01 — Adapter `sma_stp_se`: Ladeleistungs-Spike nach Moduswechsel behoben
 
 Additives MINOR-Release (Contract unverändert, keine neuen Inputs). Live beobachtet
@@ -37,19 +125,6 @@ Probleme & Hinweise" für die volle Root-Cause-Analyse.
   kritischen Fenster durchgehend ≤625 W (vorher bis 10.748 W), sauberer Übergang auf
   den echten Sollwert nach Fensterablauf.
 - Regressionstest (Pause + Schnell Laden/Entladen bei 500/1000/2000 W): unauffällig.
-
-## [1.4.0] – 2026-07-01 — Adapter `sma_stp_se`: kanonischer Sensor-Default
-
-Additives MINOR-Release (Contract unverändert). Der Default-Wert des Inputs
-`dynamic_charge_strength_sensor` wechselt von `sensor.akkusteuerung_dynamische_ladestaerke`
-auf den kanonischen Namen `sensor.opti_charge_power_w` (siehe `ha-opti-akkusteuerung`
-Canonical-Layer). **Nicht-breaking:** Home Assistant speichert den beim Blueprint-Import
-gewählten Wert pro Automations-Instanz — bestehende Automationen sind von der
-Default-Änderung nicht betroffen, nur Neuimporte sehen den neuen Vorschlagswert.
-
-### Geändert
-- Blueprint-Input `dynamic_charge_strength_sensor`: Default auf `sensor.opti_charge_power_w`,
-  Beschreibungstext ergänzt (kanonischer Name bei Nutzung von `ha-opti-akkusteuerung`).
 
 ## [1.2.0] – 2026-06-30 — Adapter `sma_stp_se`: Write-on-Change
 

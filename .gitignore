@@ -1,1 +1,7 @@
 .DS_Store
+
+# Superpowers-Planungs-/Arbeitsartefakte — nicht versionieren
+docs/superpowers/
+
+# Interner Fix-Report - nicht versionieren
+.superpowers-fix-report.md

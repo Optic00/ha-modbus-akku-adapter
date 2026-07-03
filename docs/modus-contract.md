@@ -28,6 +28,7 @@ Strategie und Helfer bleiben unverändert.
 | `Akku Dynamisch` | Adapter regelt auf Ziel (SoC/Leistungsgrenzen) | min/max SoC, Grenzen |
 | `Akku Pause` | weder laden noch entladen | – |
 | `Akku nur Laden` | Entladen gesperrt | – |
+| `Akku Netzladen` | Entladen gesperrt + erzwungenes Laden mit fester Leistung (Sollwert = dynamisches Ziel der Strategie) | Ladeleistung (W), dynamisch |
 | `Akku nur Entladen` | Laden gesperrt | – |
 | `Akku schnell Laden` | erzwungenes Laden | Ladeleistung (W) |
 | `Akku schnell Entladen` | erzwungenes Entladen | Entladeleistung (W) |
@@ -37,7 +38,11 @@ Strategie und Helfer bleiben unverändert.
 - Der Modus (Vokabular oben).
 - SoC-Grenzen: `input_number.minsoc`, `input_number.maxsoc`, Ziel via
   `sensor.opti_target_soc` (kanonischer Name; bei `ha-opti-akkusteuerung`
-  in `packages/opti_derived.yaml` definiert).
+  in `packages/opti_derived.yaml` definiert). **Reserviert:** Der SMA-Blueprint
+  (`sma_stp_se_adapter.yaml`) liest aktuell keinen dieser drei Werte selbst - er
+  bekommt nur die bereits fertig berechnete Ladestärke (`dynamic_charge_strength_sensor`)
+  und den Modus. SoC-Grenzen wirken heute ausschließlich über die Strategie, die den
+  Modus setzt.
 - Abstrakte Leistungswünsche in **Watt** (Lade-/Entlade-/Limit-Leistung), kanonisch
   `sensor.opti_charge_power_w`.
 

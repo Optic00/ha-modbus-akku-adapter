@@ -27,9 +27,10 @@ Home Assistant **vorher** drei Dinge existieren. Reihenfolge:
    **einzige** Teil, der zwingend YAML braucht – HA hat dafür keine Oberfläche.)
    → Vorlage: [`examples/sma_modbus.example.yaml`](examples/sma_modbus.example.yaml) (nur die IP eintragen).
 2. **Ein paar Helfer**, die du komplett **über die HA-Oberfläche** anlegen kannst:
-   ein Steuer-Dropdown `input_select.akkusteuerung_modus` mit **8 festen Optionen**
+   ein Steuer-Dropdown `input_select.akkusteuerung_modus` mit **9 festen Optionen**
    (`Akku Automatisch`, `Akku Dynamisch`, `Akku Pause`, `Akku nur Laden`,
-   `Akku nur Entladen`, `Akku schnell Laden`, `Akku schnell Entladen`, `Akku 0.2C Laden`)
+   `Akku Netzladen`, `Akku nur Entladen`, `Akku schnell Laden`, `Akku schnell Entladen`,
+   `Akku 0.2C Laden`)
    **plus 6 Zahlen-Helfer** (`input_number.*`) für die Lade-/Entlade-Leistungen in Watt.
    (Der 0.2C-Wert wird automatisch aus der Batteriekapazität berechnet – kein Feld nötig.)
    → Lieber kopieren statt klicken? [`examples/akkusteuerung_helpers.example.yaml`](examples/akkusteuerung_helpers.example.yaml).
@@ -63,9 +64,11 @@ Strategie  →  input_select.akkusteuerung_modus  →  [ DIESES BLUEPRINT ]  →
 1. Modbus-Verbindung anlegen (Adapter-Repo, Schritt 1). Helfer NICHT hier anlegen, wenn du Schritt 2 nutzt — siehe Hinweis unten.
 2. Opti-Packages aktivieren + `opti_mapping.yaml` ausfüllen (Opti-Repo)
 3. Home Assistant neu starten — `sensor.opti_*` prüfen
-4. Adapter-Blueprint importieren, Inputs auf `sensor.opti_charge_power_w` /
-   `sensor.opti_target_soc` setzen (nicht ungeprüft die Blueprint-Vorschlagswerte
-   übernehmen, falls sie abweichen)
+4. Adapter-Blueprint importieren, Inputs prüfen: `dynamic_charge_strength_sensor` auf
+   `sensor.opti_charge_power_w` setzen, dazu `battery_capacity_sensor`,
+   `inverter_status_sensor` und `inverter_ok_states` auf deine echten Entitäten bzw.
+   Status-Codes (nicht ungeprüft die Blueprint-Vorschlagswerte übernehmen, falls sie
+   abweichen)
 5. Strategie-Automation (`automations/opti_strategie.yaml`) aktivieren
 
 > ⚠️ **Helfer nur aus einer Quelle:** Bei kombinierter Nutzung liefert
@@ -75,10 +78,12 @@ Strategie  →  input_select.akkusteuerung_modus  →  [ DIESES BLUEPRINT ]  →
 > Entity-IDs führen zu einem Duplicate-Key-Fehler im HA-Log. Nutzt du den Adapter
 > **ohne** das Opti-Repo (eigene Strategie), gilt die Adapter-Anleitung normal.
 
-```
-Strategie  →  input_select.akkusteuerung_modus  →  [ ADAPTER-BLUEPRINT ]  →  Modbus-Register  →  WR
-(setzt Modus)        (+ input_number.* in W)              übersetzt
-```
+### Versions-Kompatibilität
+
+| Strategie-Feature | benötigter Adapter-Stand |
+|---|---|
+| Peak-Allokation / Modus „Akku Netzladen" | `ha-modbus-akku-adapter` >= v1.5.0 |
+| Alle übrigen Modi (Automatisch, Dynamisch, Pause, nur Laden, nur Entladen, schnell Laden, schnell Entladen, 0.2C Laden) | `ha-modbus-akku-adapter` >= v1.2.0 (Write-on-Change-Helfer) |
 
 ---
 
@@ -112,13 +117,14 @@ Diese Helfer legst du komplett per GUI an – **kein YAML nötig**. Pfad:
 > Helfer über das Zahnrad korrigieren.)
 
 **a) Das Steuer-Dropdown** – Typ **„Auswahl"**, Name `Akkusteuerung Modus`. Trage als
-Optionen **exakt** diese 8 Werte ein (Reihenfolge egal, Schreibweise nicht):
+Optionen **exakt** diese 9 Werte ein (Reihenfolge egal, Schreibweise nicht):
 
 ```
 Akku Automatisch
 Akku Dynamisch
 Akku Pause
 Akku nur Laden
+Akku Netzladen
 Akku nur Entladen
 Akku schnell Laden
 Akku schnell Entladen
@@ -140,13 +146,37 @@ Akku 0.2C Laden
 > 0.2C braucht **keinen** eigenen Helfer – der Wert kommt automatisch aus der Kapazität
 > (Schritt 1).
 
-**c) Der WR-Status-Sensor** – Typ **„Vorlage" → „Vorlage eines Sensors"**. Er muss `"Ok"`
-liefern, wenn der WR bereit ist (der rohe Modbus-Sensor gibt nur Zahlen zurück). Vorlage:
+**c) Der WR-Status-Sensor**
+
+**Empfohlen (kein Jinja nötig):** den rohen Modbus-Register-Sensor direkt als
+`inverter_status_sensor` eintragen (Register 33003, typisch
+`sensor.sma_stp_se_33003_betriebsstatus`) und die bei dir betriebsbereiten Status-Codes
+als Strings in `inverter_ok_states` auflisten, z. B. `["235", "1463", "2119"]`
+(`235` = Netzparallelbetrieb, `1463` = Backup, `2119` = Abregelung wegen der
+70%-Einspeisebegrenzung). Welche Codes bei dir auftreten, siehe
+[`docs/modbus-register-referenz.md`](docs/modbus-register-referenz.md) oder die eigene
+Historie unter *Entwicklerwerkzeuge → Verlauf*. Kein zusätzlicher Sensor nötig, keine
+Text-Übersetzung, die veralten kann.
+
+**Alternative: eigener Vorlage-Sensor.** Wer lieber mit Text statt Zahlencodes arbeitet,
+kann sich stattdessen einen Template-Sensor bauen, der `"Ok"` liefert, wenn der WR
+bereit ist:
 
 ```jinja
 {% set s = states('sensor.sma_stp_se_33003_betriebsstatus') | int(0) %}
 {{ 'Ok' if s in [235, 1463] else 'nicht bereit' }}
 ```
+
+> ⚠️ **Blueprint-Input `inverter_ok_states` (ab v1.5.0) – Aushunger-Falle beim WR-Status-Gate:**
+> Das Blueprint schreibt Register nur, wenn `inverter_status_sensor` einen Wert aus
+> `inverter_ok_states` liefert (Standard: nur `"Ok"`).
+> Nutzt du die Vorlage-Alternative, muss `inverter_ok_states` **jeden** Status kennen, den
+> die Vorlage nach `"Ok"` übersetzt - fehlt z. B. `2119` (Abregelung) in der Vorlage ODER
+> in `inverter_ok_states`, blockiert das ALLE Adapter-Läufe, auch den Keepalive. Läuft
+> dadurch die SMA-Fremdsteuerung in ihren Timeout, fällt der WR in seinen internen Modus
+> zurück und lädt/entlädt eigenmächtig, unabhängig vom in HA gewählten Modus. Der
+> empfohlene Weg oben (Rohsensor + Status-Codes direkt in `inverter_ok_states`) umgeht
+> dieses Problem, weil keine zusätzliche Text-Übersetzung mehr dazwischenliegt.
 
 **d) Der Sensor „Dynamische Ladestärke" (Watt)** kommt **nicht** aus diesem Repo, sondern
 von deiner *Strategie* (Schritt 3) bzw. dem Schwesterprojekt – oder du baust einen eigenen
@@ -188,15 +218,29 @@ reicht es, das Dropdown von Hand umzuschalten.
 Raw-URL** importiert (kein HACS nötig – HACS hat keine Blueprint-Kategorie):
 *Einstellungen → Automatisierungen & Szenen → Blueprints → Blueprint importieren* → Raw-URL
 einfügen, dann eine Automation aus dem Blueprint anlegen und die Helfer aus Schritt 1–2
-auswählen. Die Inputs (Hub-Name, Status-Sensor, **Batterie-Nennkapazität**, Dynamik-Sensor,
-Modus-Select) haben sinnvolle Defaults – prüfe sie und passe sie bei abweichenden
-Entity-Namen an.
+auswählen. Alle Inputs haben sinnvolle Defaults – prüfe sie und passe sie bei abweichenden
+Entity-Namen an:
+
+- Hub-Name (`modbus_hub`)
+- WR-Status-Sensor (`inverter_status_sensor`) + **`inverter_ok_states`** (Status-Codes,
+  siehe Schritt 2c – Standard nur `"Ok"`, bei Abregelung o.ä. unbedingt erweitern)
+- Batterie-Nennkapazität (`battery_capacity_sensor`)
+- Dynamik-Sensor (`dynamic_charge_strength_sensor`)
+- Modus-Select (`mode_select`)
+- die beiden **Write-on-Change-Helfer** (`last_write_value_helper`,
+  `last_write_time_helper`, Schritt 2e)
+- **Keepalive-Intervall** (`keepalive_seconds`, Default 180s – Herstellerlimit 300s)
 
 > 💡 **Stabile URL statt `main`:** Die Tabelle unten verlinkt auf den aktuellen Release-Tag
 > (`v1.4.0`), nicht auf den `main`-Branch. `main` kann zwischenzeitlich unfertige
 > Zwischenstände enthalten. Für ein Update auf eine neue Version: Blueprint erneut mit der
 > URL des neuen Tags importieren (HA zeigt dann den Diff). Alle Releases: siehe
 > [CHANGELOG.md](CHANGELOG.md) bzw. [Tags](https://github.com/Optic00/ha-modbus-akku-adapter/tags).
+>
+> Für den Modus „Akku Netzladen" (Peak-Allokation) wird der kommende `v1.5.0`-Tag
+> benötigt – die Raw-URL unten zeigt noch auf `v1.4.0` und wird nach dem Release
+> umgestellt.
+<!-- TODO: nach v1.5.0-Tag URL aktualisieren -->
 
 | WR-Familie | Blueprint | Raw-URL (Import, `v1.4.0`) | Status |
 |---|---|---|---|
