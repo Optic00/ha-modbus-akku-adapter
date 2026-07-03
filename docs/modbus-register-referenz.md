@@ -83,6 +83,11 @@ Vor Nutzung von Register 40149 muss diese Sequenz ausgeführt werden:
 | 40151 | – | `[0, 802]` | Externe Steuerung aktivieren |
 | 40151 | – | `[0, 803]` | Externe Steuerung deaktivieren / Normalbetrieb |
 
+> ⏱️ **Timeout (Community-Befund):** Ein Nutzer beobachtete, dass 40151 ohne erneutes Schreiben nach ca. 5 Minuten auf Normalbetrieb zurückfällt, und empfiehlt, spätestens alle 4 Minuten neu zu schreiben (Kumpane, PV-Forum [Thread 206718, S. 4](https://www.photovoltaikforum.com/thread/206718-sma-stp10-0-3se-40-welcher-modbus-register-zum-laden-der-batterie/?pageNo=4), 2023-11-02); der konkrete Wert hängt vermutlich vom konfigurierten Timeout ab (s.u.).
+> Der Rückfall-Timeout ist als Geräteparameter "Externe Wirkleistungsvorgabe, Timeout" einstellbar (5 s bis 9 h); nach Ablauf kehrt der WR zur internen Regelung zurück (kohaku, ebd., 2023-11-02).
+> Berichtete Firmware-Defaults: 30 min bei FW 3.1.9R, 10 min bei FW 3.2.20R (kohaku, PV-Forum [Thread 194071](https://www.photovoltaikforum.com/thread/194071-tripower-smart-energy-begrenzung-der-ladeleistung-des-speichers-%C3%BCber-modbus/), 2023-04-21).
+> Details siehe Abschnitt "Community-Wissen & Quellenlage" unten.
+
 ---
 
 ### Sollwert Batterieleistung direkt (40149)
@@ -142,6 +147,13 @@ Alle Werte in **Watt**, müssen **zyklisch max. alle 300 s** gesendet werden und
 | 41259 | `CmpBMS.OpMod` | `[0, 1438]` | **Dynamisch** – WR regelt auf GridWSpt |
 | 41259 | `CmpBMS.OpMod` | `[0, 2289]` | **Nur Laden** – Entladen gesperrt (`Akku Netzladen` nutzt seit v1.5.0 NICHT diesen Pfad, siehe unten) |
 | 41259 | `CmpBMS.OpMod` | `[0, 2290]` | **Nur Entladen** |
+| 41259 | `CmpBMS.OpMod` | `[0, 2424]` | **Voreinstellung (Dft)** - nicht von diesem Adapter genutzt; evcc verwendet 2424 als Normal-/Hold-Modus (Community, siehe unten) |
+
+> ℹ️ **Modus-Semantik laut Community (kohaku, PV-Forum [Thread 206718, S. 23](https://www.photovoltaikforum.com/thread/206718-sma-stp10-0-3se-40-welcher-modbus-register-zum-laden-der-batterie/?pageNo=23), 2024-11-16):**
+> Vollständige Taglist: 303 (Aus), 308 (Ein), 1438 (Auto), 2289 (BatChaMod), 2290 (BatDschMod), 2424 (Voreinstellung/Dft).
+> In 2289 wird **nur geladen, wenn am Netzanschlusspunkt eingespeist wird**; bei Bezug geht die Leistung auf 0 und der Akku in Standby.
+> In 2290 wird analog **nur entladen, wenn am Netzanschlusspunkt bezogen wird**.
+> Das erklärt, warum 2289 kein Laden aus dem Netz erzwingen kann (siehe v1.5.0-Befund unten).
 
 ---
 
@@ -166,7 +178,7 @@ Alle Werte in **Watt**, müssen **zyklisch max. alle 300 s** gesendet werden und
 ### Grid Guard Code (43090) – veraltet
 
 > ℹ️ Der Grid Guard Code (GGC) war früher nötig um erweiterte Schreibzugriffe freizuschalten.  
-> **Der GGC gilt zunehmend als deprecated** (Community-Rollout-Meldung ab ~18. März 2025).  
+> **Der GGC gilt zunehmend als deprecated** (Aussage von Falko Schmidt, SMA, am 18.03.2025 im PV-Forum [Thread 244594](https://www.photovoltaikforum.com/thread/244594-sma-modbus-welche-register-nutzt-ihr/): "Der GGC wird ab der Version 2.16.4.R nicht mehr notwendig sein.").  
 > ⚠️ Die kursierende Versionsangabe „2.16.4.R" entspricht dem **SHM2-Firmware-Schema** – die STP-SE-WR-Firmware nutzt eine andere Nummerierung (3.x). Es ist daher unklar, auf welches Gerät bzw. welche Firmware sich die Deprecation genau bezieht; Angabe mit Vorsicht behandeln.  
 > Für die Akkusteuerung über 40149 / 40151 / 40793–40801 war der GGC ohnehin **nie erforderlich**.
 
@@ -237,7 +249,8 @@ Die offizielle SMA Modbus-Dokumentation für den SBS findet sich unter:
 > ¹ Min-Leistungsregister (40793/40797) schreibt Maverick nur bei bestimmten Geräten (`DevType` 9324–9326, 9356–9359) und **verzögert** (≈1 s nach den anderen), um eine WR-Überlastung zu vermeiden.  
 > ² `GridWSpt` (40801) wird nur bei `DevType ≥ 9300` (SBS-Klasse) geschrieben, ebenfalls verzögert.
 >
-> ⚠️ **Encoding beachten:** Der ioBroker-Modbus-Adapter schreibt **skalare** Registerwerte (z.B. `CmpBMSOpMod = 2424`, `FedInSpntCom = 803`), während diese HA-Doku teils **Wort-Paare** angibt (z.B. `40236 → [0, 1438]`). Werte sind daher **nicht 1:1** übertragbar – insbesondere ist der OpMod-Wert `2424` ein anderer als unsere bekannten `41259`-Enums (303/1438/2289/2290); seine Bedeutung ist ungeklärt. Vor Übernahme an echter HA-Anlage prüfen.
+> ⚠️ **Encoding beachten:** Der ioBroker-Modbus-Adapter schreibt **skalare** Registerwerte (z.B. `CmpBMSOpMod = 2424`, `FedInSpntCom = 803`), während diese HA-Doku teils **Wort-Paare** angibt (z.B. `40236 → [0, 1438]`). Werte sind daher **nicht 1:1** übertragbar. Vor Übernahme an echter HA-Anlage prüfen.
+> Der OpMod-Wert `2424` wird in der Community-Taglist als "Voreinstellung (Dft)" bezeichnet (kohaku, PV-Forum Thread 206718 S. 23; evcc nutzt ihn als Normal-/Hold-Modus, siehe Abschnitt "Community-Wissen & Quellenlage"); seine exakte Semantik ist aber nicht abschließend geklärt.
 
 ### SBS Lese-Register – bekannte Adressen (SBS 2.5)
 
@@ -361,6 +374,12 @@ Das funktionierte nicht.
 - Für das Kippen nach 5,5 Minuten gibt es mehrere Erklärungskandidaten: eine Firmware-Plausibilitätsprüfung, die das degenerierte Fenster Min = Max verwirft und auf interne Defaults zurückfällt; ein generell anderes Regelverhalten im 2289-Kontext; oder ein Ablauf der externen Vorgaben (auffällige zeitliche Nähe der ~5,5 Minuten zum 300-s-Zyklus-Limit).
 - Welcher Kandidat zutrifft, ist offen; getestet wurde nur diese eine Konstellation.
 
+*Nachtrag (Web-Recherche 2026-07-03):*
+Die Community-Quellen stützen den Befund und liefern eine plausible Erklärung.
+Laut kohaku (PV-Forum Thread 206718 S. 23, 2024-11-16) lädt Modus 2289 grundsätzlich nur bei Einspeisung am Netzanschlusspunkt; ein Lade-Zwang ist in diesem Modus nicht vorgesehen.
+Für das 5,5-Minuten-Kippen kommen zwei dokumentierte Timeout-Mechanismen im selben Zeitfenster in Frage (300-s-Erneuerungspflicht der BMS-Register; ~5-min-Rückfall der externen Steuerung).
+Details und Quellen im Abschnitt "Community-Wissen & Quellenlage" unten.
+
 **Reaktion im Adapter:** "Akku Netzladen" nutzt ab v1.5.0 deshalb dieselbe 40151/40149-Kommandoschiene wie
 "Akku schnell Laden" statt der BMS-Leistungsgrenzen-Register (40793–40801/41259).
 Der oben dokumentierte v1.3.0-Spike-Mechanismus betraf ausschließlich den BMS-Leistungsgrenzen-Pfad und ist
@@ -376,13 +395,76 @@ Wer sie darüber hinaus als aktive Ladesteuerung einsetzen will (insbesondere Mi
 
 ---
 
+## Community-Wissen & Quellenlage (Web-Recherche, Stand 2026-07-03)
+
+> Dieser Abschnitt fasst externe Quellen zusammen (Photovoltaikforum, ioBroker-Forum, loxforum, evcc auf GitHub).
+> Community-Aussagen sind als solche gekennzeichnet und nicht an dieser Anlage verifiziert, sofern nicht anders vermerkt.
+
+### Fenster-Semantik von 40793-40801: durch Community-Berichte gestützt
+
+Die Einordnung der vier Min-/Max-Register als Grenzen der WR-eigenen Regelung (nicht als Sollwerte) deckt sich mit der Community.
+humi208 beschreibt sie als Limits, nicht als Kommandos ([PV-Forum Thread 244594](https://www.photovoltaikforum.com/thread/244594-sma-modbus-welche-register-nutzt-ihr/), 2025-03-18).
+Das evcc-Projekt nutzt sie im "normal"-Modus genauso wie dieser Adapter: Min = 0, Max als Deckel, `GridWSpt` = 0, zyklisch erneuert ([sma-hybrid Template](https://github.com/evcc-io/evcc/blob/master/templates/definition/meter/sma-hybrid.yaml)).
+Wichtig: Einzelne Max-Register isoliert zu schreiben zeigt keine Wirkung.
+Mehrere Nutzer berichten, dass 40795/40799 allein beschrieben wirkungslos blieben (kohaku/seifranudo, [PV-Forum Thread 194071](https://www.photovoltaikforum.com/thread/194071-tripower-smart-energy-begrenzung-der-ladeleistung-des-speichers-%C3%BCber-modbus/), 2023; tuning/Delphinis, [ioBroker-Forum Topic 59635](https://forum.iobroker.net/topic/59635/sma-hybrid-wechselrichter-stp10-0-3se-40-modbus-schreiben), 2022/2024).
+Wirkung entfaltet die Registerfamilie erst als komplett geschriebenes Set inkl. `CmpBMS.OpMod` und `GridWSpt` (kohaku, [PV-Forum Thread 206718, S. 23](https://www.photovoltaikforum.com/thread/206718-sma-stp10-0-3se-40-welcher-modbus-register-zum-laden-der-batterie/?pageNo=23), 2024-11-16).
+Der Unterschied zur 40149/40151-Schiene wird in der Community genauso beschrieben wie hier: 40149 ist ein direkter Leistungssollwert ("positiv = entladen, negativ = laden", arteck, ioBroker-Forum Topic 59635, 2024-10-28), die CmpBMS-Familie parametriert dagegen die WR-eigene Regelung am Netzanschlusspunkt.
+
+### Netzladen via 2289 + Min=Max: evcc nutzt exakt dieses Rezept, mit gemischten Ergebnissen
+
+Das evcc-Template `sma-hybrid` setzt für den Modus "charge" exakt die Kombination, die in unserem Live-Test scheiterte: `OpMod` = 2289, `BatChaMinW` = `BatChaMaxW` = chargepower, `DschMin/Max` = 0, `GridWSpt` = 0 (eingeführt mit [PR #17393](https://github.com/evcc-io/evcc/pull/17393), 2024-11-25; evcc nutzt 40236 statt 41259 und 2424 statt 1438 als Normalmodus).
+Mindestens ein Nutzer bestätigt damit funktionierendes Netzladen (Aarfalke, [PV-Forum Thread 252168](https://www.photovoltaikforum.com/thread/252168-preisabh%C3%A4ngiges-laden-der-batterie-%C3%BCber-modbus-tcp/), 2025-09-21).
+Andere berichten genau unser Symptom, dass die Batterie statt zu laden nur in Standby geht ([evcc Issue #17115](https://github.com/evcc-io/evcc/issues/17115), 2024; [Issue #15442](https://github.com/evcc-io/evcc/issues/15442), 2024-08-17).
+Wesentlicher Unterschied zu unserem Test: evcc schreibt das komplette Registerset per Watchdog alle 60 s neu (Template-Default).
+Einordnung: Wegen der 2289-Semantik (lädt nur bei Einspeisung) ist dieses Rezept auch mit kurzem Schreibzyklus kein garantiertes Netzladen; der 40151/40149-Pfad bleibt die robustere Schiene für erzwungenes Laden (deckt sich mit unserem Live-Test und mit arteck, ioBroker-Forum Topic 59635, 2024-10-28).
+Widerspruch in den Quellen: kohaku beschreibt 303/308/2424 pauschal als "weder geladen noch entladen", während evcc 2424 produktiv als Normalmodus (WR-eigene Regelung innerhalb der Fenster) nutzt.
+Welche Beschreibung exakt stimmt, ist offen; dieser Adapter nutzt weiterhin 1438 (Auto) als Normalmodus, was live belegt funktioniert.
+
+### Timeouts & Zykluszeiten
+
+- BMS-Registerfamilie (40793-40801 + OpMod): alle Register innerhalb von 10 s schreiben, Erneuerung mindestens alle 300 s (kohaku, PV-Forum Thread 206718 S. 23, 2024-11-16; deckt sich mit der SMA-Support-Antwort bei ajay123).
+- 40151 (externe Steuerung): fällt ohne erneutes Schreiben nach ca. 5 min zurück; Empfehlung: alle 4 min neu schreiben (Kumpane, PV-Forum Thread 206718 S. 4, 2023-11-02).
+- Der Rückfall-Timeout ist als Geräteparameter "Externe Wirkleistungsvorgabe, Timeout" einstellbar (5 s bis 9 h); nach Ablauf kehrt der WR zur **internen Regelung** zurück (kohaku, ebd.).
+- Firmware-abhängige Defaults berichtet: 30 min (FW 3.1.9R), 10 min (FW 3.2.20R) (kohaku, PV-Forum Thread 194071, 2023-04-21).
+- Praktizierte Zykluszeiten: evcc-Watchdog 60 s; arteck alle 10 s; kohaku testete 2-3 s als stabiles Minimum und warnt vor 500-ms-Zyklen; wittmannchris und Maverick78de legen 1-2 s Pause zwischen Registergruppen ein, um den Modbus nicht zu überlasten ([evcc Issue #15881](https://github.com/evcc-io/evcc/issues/15881), 2024-09-03).
+- Einordnung zu unserem 5,5-min-Kipp-Effekt: Ein exakter Beleg für 5,5 min findet sich nicht, aber zwei dokumentierte Mechanismen liegen genau in diesem Zeitfenster (300-s-Erneuerungspflicht der BMS-Register; ~5-min-Rückfall von 40151).
+- Das beobachtete ungeregelte Volllast-Laden hat damit eine plausible (aber nicht direkt belegte) Erklärung: Nach dem Rückfall auf die interne Regelung lädt der WR schlicht den vollen PV-Überschuss, ohne die abgelaufenen externen Fenster.
+
+### Entlade-Deckel und Entlade-Sperre (40799)
+
+- Community-Standard für den Entlade-Deckel entspricht unserem Muster: `BatDschMinW` = 0, `BatDschMaxW` = Deckel, zyklisch erneuert (evcc sma-hybrid; wittmannchris, evcc Issue #15881: 40799 = 2650 im Normalbetrieb).
+- Entlade-Sperre wird über `BatDschMaxW` = 0 realisiert (evcc "hold"-Modus).
+- Bekannte Eigenheit: Ein Nutzer mit STP10.0-3SE-40 (FW 3.05.26.R) berichtet, dass die Sperre während Wallbox-Schnellladen wiederholt kurz durchbrach (Entlade-Bursts bis ~4,1 kW trotz 40799 = 0); das Issue wurde ungelöst geschlossen ([evcc Issue #18339](https://github.com/evcc-io/evcc/issues/18339), 2025-01-21).
+- Eine zwingende Reihenfolge Min-vor-Max ist nirgends dokumentiert; evcc schreibt OpMod zuerst, dann ChaMin, ChaMax, DschMin, DschMax, GridWSpt.
+- Zum Verhalten bei Min > Max wurde keine Quelle gefunden.
+- Persistenz über WR-Neustarts ist nirgends belegt; die Schreibregister sind flüchtig (lesen als 0/null zurück: arteck/M_aus_B, ioBroker-Forum Topic 59635) und laufen ohnehin über Timeouts aus.
+- Nach einem Neustart ist daher von Normalbetrieb auszugehen, bis der nächste Schreibzyklus greift.
+
+### Weitere Fallstricke aus den Quellen
+
+- SHM2-Firmware: Mit SHM-Firmware 2.14.x überschreibt der Home Manager die Modbus-Batteriesteuerung am WR; ab 2.15.x koexistiert es (humi208, PV-Forum Thread 206718 S. 23, 2024-10-09).
+- Die offizielle Parameterliste enthält Duplikat-Adressen (44427 für 40151, 44433/44437 für 40795/40799), die in Community-Tests wirkungslos blieben (tuning, ioBroker-Forum Topic 59635, 2022-11-03).
+- 40149-Encoding: Wird das Register im Client als signed 32-bit (Big Endian) konfiguriert, entfällt das manuelle 65535-Encoding; Fehlversuche mit manuellem Zweierkomplement gingen auf falsche Registerkonfiguration zurück (f.eckel, [PV-Forum Thread 226189](https://www.photovoltaikforum.com/thread/226189-modbus-40149-negative-werte/), 2024-04-16).
+- Off-by-one-Falle: Manche Modbus-CLIs adressieren 0-basiert; dort landet man z.B. bei 40150/40152 statt 40149/40151 (Beispiel in [evcc Issue #15442](https://github.com/evcc-io/evcc/issues/15442)).
+
+### Offizielle Parameterliste
+
+SMA stellt die Parameter-/Modbus-Liste für den STP SE als HTML-Export bereit: `PARAMETER-HTML_STPxx-3SE-40_30109R_V11.zip` über files.sma.de (laut kohaku Stand Mai 2026 die letzte offizielle Dokumentation, [PV-Forum Thread 260874](https://www.photovoltaikforum.com/thread/260874-sunny-tripower-8-0-se-firmware-version-3-5-29-r-dokumentation-zu-modbus-register/), 2026-05-19).
+rewalde bestätigt dort (ebd., 2026-05-19) die Lücken, die auch diese Doku nennt: 40795/40799 sind offiziell dokumentiert, 40793/40797/40801/40236 nicht.
+
+---
+
 ## Quellen
 
 - **ajay123** im Photovoltaikforum: [Direkte SMA-Support-Antwort mit offiziellen Registernamen](https://www.photovoltaikforum.com/thread/215473-begrenzen-der-lade-entladeleistung-byd-mit-stp-se/?postID=4033278#post4033278) *(Hauptquelle für die BMS-Register)*
 - **Skybarks** im Photovoltaikforum: [Hinweis auf offizielle SMA Modbus-Dokumentation](https://www.photovoltaikforum.com/thread/206718-sma-stp10-0-3se-40-welcher-modbus-register-zum-laden-der-batterie/?pageNo=6)
 - **Community-Sammlung** im Photovoltaikforum: [SMA Modbus – Welche Register nutzt ihr?](https://www.photovoltaikforum.com/thread/244594-sma-modbus-welche-register-nutzt-ihr/) *(SBS 2.5 Bestätigung, SHM2-Register, GGC-Deprecation)*
 - **Maverick78de** auf GitHub: [SMA_forecast_charging](https://github.com/Maverick78de/SMA_forecast_charging) (ioBroker, archiviert 2023) *(SBS-3.7–10-Schreib-/Lese-Register und DevType-Zuordnung – `bat_regelung_2.3.4.js`)*
-- Offizielle SMA Modbus-Dokumentation: Über das SMA Service-Portal erhältlich (Registrierung erforderlich)
+- **kohaku** im Photovoltaikforum: [Thread 206718, S. 23](https://www.photovoltaikforum.com/thread/206718-sma-stp10-0-3se-40-welcher-modbus-register-zum-laden-der-batterie/?pageNo=23) (2024-11-16) *(OpMod-Taglist inkl. 2424, 2289/2290-Semantik, 10-s-/300-s-Regel)* und [Thread 206718, S. 4](https://www.photovoltaikforum.com/thread/206718-sma-stp10-0-3se-40-welcher-modbus-register-zum-laden-der-batterie/?pageNo=4) (2023-11-02, mit Kumpane) *(40151-Rückfall, Timeout-Geräteparameter)*
+- **Photovoltaikforum**: [Thread 194071 – Begrenzung der Ladeleistung über Modbus](https://www.photovoltaikforum.com/thread/194071-tripower-smart-energy-begrenzung-der-ladeleistung-des-speichers-%C3%BCber-modbus/) *(Max-Register isoliert wirkungslos, Firmware-Timeout-Defaults)* · [Thread 226189 – Modbus 40149 negative Werte](https://www.photovoltaikforum.com/thread/226189-modbus-40149-negative-werte/) *(S32-Encoding)* · [Thread 252168 – Preisabhängiges Laden](https://www.photovoltaikforum.com/thread/252168-preisabh%C3%A4ngiges-laden-der-batterie-%C3%BCber-modbus-tcp/) *(Netzladen via evcc)* · [Thread 260874 – Doku zu Modbus-Registern](https://www.photovoltaikforum.com/thread/260874-sunny-tripower-8-0-se-firmware-version-3-5-29-r-dokumentation-zu-modbus-register/) *(offizielle Parameterliste, Doku-Lücken)*
+- **evcc** auf GitHub: [sma-hybrid Template](https://github.com/evcc-io/evcc/blob/master/templates/definition/meter/sma-hybrid.yaml) *(CmpBMS-Registernutzung, 60-s-Watchdog)* · [PR #17393](https://github.com/evcc-io/evcc/pull/17393) · Issues [#15881](https://github.com/evcc-io/evcc/issues/15881), [#17115](https://github.com/evcc-io/evcc/issues/17115), [#15442](https://github.com/evcc-io/evcc/issues/15442), [#18339](https://github.com/evcc-io/evcc/issues/18339)
+- **ioBroker-Forum**: [Topic 59635 – STP10.0-3SE-40 Modbus Schreiben](https://forum.iobroker.net/topic/59635/sma-hybrid-wechselrichter-stp10-0-3se-40-modbus-schreiben) *(40149/40151-Praxis, flüchtige Register, 44433/44437 wirkungslos)*
+- Offizielle SMA Modbus-Dokumentation: Parameterlisten-Export `PARAMETER-HTML_STPxx-3SE-40_30109R_V11.zip` via files.sma.de bzw. über das SMA Service-Portal (Registrierung erforderlich)
 
 ---
 
