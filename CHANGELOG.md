@@ -12,6 +12,83 @@ unabhängig weiterentwickelt werden können (Versions-Skew vermeiden).
 - `sma_sbs_adapter.yaml` (abweichendes Register-Map, gleicher Contract).
 - Capability-Schicht (Adapter meldet Fähigkeiten) – erst mit erstem Nicht-SMA-Adapter.
 
+## [1.6.1] - 2026-07-04 - Adapter `sma_stp_se`: Grenzfenster-Invariante gegen entartetes BMS-Fenster
+
+Hintergrund: Codebase-Review (Claude, gegengeprueft mit unabhaengiger Architektur-
+und Adversarial-Zweitmeinung) deckte auf, dass die Lade-/Entlade-Fenster-Berechnung
+(`v_40793`/`v_40795`, `v_40797`/`v_40799`) ein Fenster mit `Min == Max > 0` erzeugen
+konnte - genau die Konstellation, die in `docs/modbus-register-referenz.md`
+("Bekannte Probleme & Hinweise") als Ursache fuer unkontrolliertes Volllast-Laden
+in OpMod 2289 dokumentiert ist. Fuer Dynamisch (1438) war das unbelegt, aber nicht
+ausgeschlossen. Auf der Ladeseite konnte der Fall sogar mechanisch bei JEDEM
+Eintritt in "Akku Dynamisch" auftreten, sobald `min_ladestaerke` >= dem
+Settling-Deckel (500 W) konfiguriert ist, weil beide Grenzen dann exakt auf
+denselben Wert gedeckelt wurden.
+
+### Behoben
+- **Ladefenster (40793/40795) und Entladefenster (40797/40799):** Untergrenze wird
+  nur noch uebernommen, wenn sie nachweislich kleiner als die (ggf.
+  Settling-gedeckelte) Obergrenze ist - sonst wird das gesamte Fenster auf `[0, 0]`
+  gesetzt (diesen Zyklus nicht laden/entladen), statt Unter- und Obergrenze auf
+  denselben positiven Wert zu deckeln. Live-verifiziert (2026-07-04, Pause/schnell
+  Laden/schnell Entladen/Dynamisch-Uebergang unauffaellig) und mit Python/Jinja2
+  gegen 9 Grenzfaelle getestet (inkl. des exakten Settling-Kollisionsfalls
+  Floor=Ziel=500). Betrifft alle Modi, die den Standardpfad durchlaufen (Dynamisch,
+  Pause, nur Laden, nur Entladen) - nicht nur Dynamisch, da der Original-Vorfall
+  gerade in "nur Laden" (2289) beobachtet wurde.
+- Negative Sensor-/Helferwerte werden jetzt vor dem Vergleich auf `0` geclampt
+  (Verteidigung gegen defekte Sensoren).
+- **Fehlender `int(0)`-Fallback in "schnell Laden"/"schnell Entladen":** beide Branches
+  nutzten nacktes `| int` statt `| int(0)` wie der Rest des Files. Wird der
+  Sollwert-Helfer beim `homeassistant start`-Trigger noch nicht restored
+  (`unknown`), brach die Automation bislang MIT bereits aktivierter externer
+  Steuerung (40151=802) aber OHNE geschriebenen Sollwert ab.
+- **Toter Trigger `akkusteuerung_max_ladestaerke` entfernt:** wurde nirgends in
+  `variables:`/`actions:` gelesen - der Lade-Deckel kommt bereits aus
+  `dyn_charge_entity`, die den Helfer upstream in `ha-opti-akkusteuerung`
+  einrechnet.
+- **Trigger aufgeteilt:** Modus-Wechsel und dynamisches Ladeziel lösen jetzt ohne
+  2-s-Debounce aus (entspricht der Absicht "sofort übernehmen, nicht erst beim
+  /2-min-Tick"); nur die manuellen Soll-/Grenz-Helfer (Slider) behalten den
+  2-s-Debounce gegen Anti-Flatter beim Ziehen.
+
+## [1.6.0] - 2026-07-03 - Adapter `sma_stp_se`: Schreibverhalten wie Legacy "Akkusteuerung 2.0"
+
+Hintergrund: Live-Befunde vom 2./3.7. (WR faellt in "nur Entladen" ins eigenmaechtige
+Volllladen, ~300-320 s nach dem letzten wertaendernden Write, waehrend identische
+zyklische Refreshes wirkungslos blieben - siehe docs/modbus-register-referenz.md und
+den evcc-Issue-Entwurf). Die Legacy-Automation "Akkusteuerung 2.0" schrieb ein Jahr
+lang stabil: unconditional, voller Registersatz, Dynamisch ueber 40236. Dieses
+Release spiegelt das bewaehrte Schreibverhalten exakt und behaelt die neuen
+Qualitaetsmerkmale (konfigurierbares Status-Gate, Netzladen-/Schnell-Schienen,
+Settling-Deckel, Diagnose-Helfer).
+
+### Geaendert
+- **Unconditional-Writes statt Write-on-Change/Keepalive:** der volle BMS-Registersatz
+  (40151=803, 40793/40795/40797/40799/40801 + OpMod) wird bei JEDEM Lauf geschrieben,
+  wie bei der Legacy-Automation. Die Register sind Write-Only-Sollwerte, identisches
+  Wiederschreiben ist unschaedlich. Das `write_needed`-Gate und der
+  /1-min-Keepalive-Check entfallen.
+- **Zyklischer Trigger /2 min statt /4 min:** haelt das 300-s-Fenster der
+  SMA-Fremdsteuerung auch dann ein, wenn ein einzelner Lauf ausfaellt
+  (mode: single-Kollision oder Status-Gate).
+- **Modus "Akku Dynamisch" schreibt OpMod 1438 auf Register 40236** (SMA-Adresse)
+  statt 41259 (Sunspec) - exakt wie die Legacy-Automation. Pause/nur Laden/
+  nur Entladen bleiben auf 41259 (ebenfalls wie Legacy).
+- **Delays zwischen Registerschreibvorgaengen 500 ms statt 1 s:** kompletter Satz in
+  ~3,5 s statt ~7 s, mehr Marge zur SMA-Anforderung "alle Werte innerhalb von 10 s".
+  Die 2-s-Wartezeit nach Aktivierung der 40151/40149-Kommandoschiene bleibt.
+- Blueprint-Input `keepalive_seconds` ist DEPRECATED und ohne Funktion (bleibt
+  deklariert, damit bestehende Automationen nicht brechen). Die Helfer
+  `letzter_schreibwert`/`letzter_schreibzeitpunkt` sind reine Diagnose.
+
+### Behoben
+- **Modus "Akku 0.2C Laden" vor den Standardpfad gezogen** (mit `stop`, wie die
+  anderen 40151/40149-Kommandoschienen): vorher lief der Branch hinter dem
+  Standardpfad, wodurch jeder Lauf die Sollwert-Schiene erst deaktivierte
+  (40151=803) und dann wieder aktivierte - mit den Unconditional-Writes aus
+  diesem Release waere das alle 2 Minuten passiert (Codex-Review-Finding).
+
 ## [1.5.0] - 2026-07-03 - Adapter `sma_stp_se`: neuer Modus "Akku Netzladen"
 
 Additives MINOR-Release (Contract-Erweiterung um einen neuen Modus, kein Breaking
