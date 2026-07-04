@@ -12,6 +12,46 @@ unabhängig weiterentwickelt werden können (Versions-Skew vermeiden).
 - `sma_sbs_adapter.yaml` (abweichendes Register-Map, gleicher Contract).
 - Capability-Schicht (Adapter meldet Fähigkeiten) – erst mit erstem Nicht-SMA-Adapter.
 
+## [1.6.1] - 2026-07-04 - Adapter `sma_stp_se`: Grenzfenster-Invariante gegen entartetes BMS-Fenster
+
+Hintergrund: Codebase-Review (Claude, gegengeprueft mit unabhaengiger Architektur-
+und Adversarial-Zweitmeinung) deckte auf, dass die Lade-/Entlade-Fenster-Berechnung
+(`v_40793`/`v_40795`, `v_40797`/`v_40799`) ein Fenster mit `Min == Max > 0` erzeugen
+konnte - genau die Konstellation, die in `docs/modbus-register-referenz.md`
+("Bekannte Probleme & Hinweise") als Ursache fuer unkontrolliertes Volllast-Laden
+in OpMod 2289 dokumentiert ist. Fuer Dynamisch (1438) war das unbelegt, aber nicht
+ausgeschlossen. Auf der Ladeseite konnte der Fall sogar mechanisch bei JEDEM
+Eintritt in "Akku Dynamisch" auftreten, sobald `min_ladestaerke` >= dem
+Settling-Deckel (500 W) konfiguriert ist, weil beide Grenzen dann exakt auf
+denselben Wert gedeckelt wurden.
+
+### Behoben
+- **Ladefenster (40793/40795) und Entladefenster (40797/40799):** Untergrenze wird
+  nur noch uebernommen, wenn sie nachweislich kleiner als die (ggf.
+  Settling-gedeckelte) Obergrenze ist - sonst wird das gesamte Fenster auf `[0, 0]`
+  gesetzt (diesen Zyklus nicht laden/entladen), statt Unter- und Obergrenze auf
+  denselben positiven Wert zu deckeln. Live-verifiziert (2026-07-04, Pause/schnell
+  Laden/schnell Entladen/Dynamisch-Uebergang unauffaellig) und mit Python/Jinja2
+  gegen 9 Grenzfaelle getestet (inkl. des exakten Settling-Kollisionsfalls
+  Floor=Ziel=500). Betrifft alle Modi, die den Standardpfad durchlaufen (Dynamisch,
+  Pause, nur Laden, nur Entladen) - nicht nur Dynamisch, da der Original-Vorfall
+  gerade in "nur Laden" (2289) beobachtet wurde.
+- Negative Sensor-/Helferwerte werden jetzt vor dem Vergleich auf `0` geclampt
+  (Verteidigung gegen defekte Sensoren).
+- **Fehlender `int(0)`-Fallback in "schnell Laden"/"schnell Entladen":** beide Branches
+  nutzten nacktes `| int` statt `| int(0)` wie der Rest des Files. Wird der
+  Sollwert-Helfer beim `homeassistant start`-Trigger noch nicht restored
+  (`unknown`), brach die Automation bislang MIT bereits aktivierter externer
+  Steuerung (40151=802) aber OHNE geschriebenen Sollwert ab.
+- **Toter Trigger `akkusteuerung_max_ladestaerke` entfernt:** wurde nirgends in
+  `variables:`/`actions:` gelesen - der Lade-Deckel kommt bereits aus
+  `dyn_charge_entity`, die den Helfer upstream in `ha-opti-akkusteuerung`
+  einrechnet.
+- **Trigger aufgeteilt:** Modus-Wechsel und dynamisches Ladeziel lösen jetzt ohne
+  2-s-Debounce aus (entspricht der Absicht "sofort übernehmen, nicht erst beim
+  /2-min-Tick"); nur die manuellen Soll-/Grenz-Helfer (Slider) behalten den
+  2-s-Debounce gegen Anti-Flatter beim Ziehen.
+
 ## [1.6.0] - 2026-07-03 - Adapter `sma_stp_se`: Schreibverhalten wie Legacy "Akkusteuerung 2.0"
 
 Hintergrund: Live-Befunde vom 2./3.7. (WR faellt in "nur Entladen" ins eigenmaechtige

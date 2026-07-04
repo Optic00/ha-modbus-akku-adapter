@@ -153,31 +153,60 @@ variables:
   # "Akku Netzladen" nutzt seit v1.5.0 die 40151/40149-Kommandoschiene (Branch
   # "Wenn Akku Netzladen" weiter unten, analog "Wenn Akku schnell Laden") und stoppt
   # dort, bevor diese BMS-Wertregister ueberhaupt erreicht werden - braucht also
-  # keine Sonderweiche mehr in v_40793_raw. Live-Befund (2026-07-03): der
-  # urspruengliche Ansatz ueber BatChaMinW/40793 wurde vom WR in diesem Kontext
+  # keine Sonderweiche mehr in der Ladefenster-Berechnung. Live-Befund (2026-07-03):
+  # der urspruengliche Ansatz ueber BatChaMinW/40793 wurde vom WR in diesem Kontext
   # nicht befolgt (siehe CHANGELOG v1.5.0 und docs/modbus-register-referenz.md,
   # "Bekannte Probleme & Hinweise").
-  v_40793_raw: >-
-    {{ [states('input_number.akkusteuerung_min_ladestaerke') | int(0), states(dyn_charge_entity) | int(0)] | min }}
-  v_40793: "{{ [v_40793_raw, dynamisch_settling_cap_w] | min if dynamisch_settling else v_40793_raw }}"
-  v_40795_raw: "{{ states(dyn_charge_entity) | int(0) }}"
-  v_40795: "{{ [v_40795_raw, dynamisch_settling_cap_w] | min if dynamisch_settling else v_40795_raw }}"
-  v_40797: "{{ [states('input_number.akkusteuerung_min_entladestaerke') | int(0), states('input_number.akkusteuerung_max_entladestaerke') | int(0)] | min }}"
-  v_40799: "{{ states('input_number.akkusteuerung_max_entladestaerke') | int(0) }}"
+  #
+  # Grenzfenster-Invariante (Review 2026-07-04, gegengeprueft mit unabhaengiger
+  # Architektur- und Adversarial-Zweitmeinung): BatChaMinW darf NIE == BatChaMaxW
+  # > 0 sein - genau diese Kombination wurde in OpMod 2289 live reproduziert und
+  # fuehrte zu unkontrolliertem Volllast-Laden (docs/modbus-register-referenz.md,
+  # "Bekannte Probleme & Hinweise"). Fuer Dynamisch (1438) ist das unbelegt, aber
+  # nicht ausgeschlossen - deshalb strukturell verhindert statt nur "meistens"
+  # vermieden: erst die Obergrenze (Ziel, ggf. Settling-gedeckelt) berechnen, die
+  # Untergrenze (Lade-/Entlade-Floor, gegen Tropfenladen bzw. Fehlkonfiguration)
+  # nur uebernehmen, wenn sie NACHWEISLICH kleiner als die Obergrenze ist - sonst
+  # 0. Liegt das Ziel unter dem Floor, entsteht [0, 0] (diesen Zyklus nicht
+  # laden/entladen) statt eines kollabierten [Floor, Floor]-Fensters. Gilt fuer
+  # alle Modi, die durch den Standardpfad laufen (Dynamisch, Pause, nur Laden,
+  # nur Entladen) - nicht nur fuer Dynamisch, da der Invariantenbruch im
+  # Live-Vorfall gerade in "nur Laden" (2289) auftrat.
+  v_charge_floor: "{{ [states('input_number.akkusteuerung_min_ladestaerke') | int(0), 0] | max }}"
+  v_charge_target_raw: "{{ [states(dyn_charge_entity) | int(0), 0] | max }}"
+  v_charge_target: "{{ [v_charge_target_raw, dynamisch_settling_cap_w] | min if dynamisch_settling else v_charge_target_raw }}"
+  v_40795: "{{ 0 if v_charge_target < v_charge_floor else v_charge_target }}"
+  v_40793: "{{ v_charge_floor if 0 < v_charge_floor and v_charge_floor < v_40795 else 0 }}"
+  v_discharge_floor: "{{ [states('input_number.akkusteuerung_min_entladestaerke') | int(0), 0] | max }}"
+  v_discharge_target: "{{ [states('input_number.akkusteuerung_max_entladestaerke') | int(0), 0] | max }}"
+  v_40799: "{{ 0 if v_discharge_target < v_discharge_floor else v_discharge_target }}"
+  v_40797: "{{ v_discharge_floor if 0 < v_discharge_floor and v_discharge_floor < v_40799 else 0 }}"
   # Snapshot (inkl. Modus) ist seit v1.6.0 reine Diagnose: der Adapter schreibt
   # bei jedem Lauf unconditional. Die Register sind Write-Only-Sollwerte, kein
   # persistierter Speicher - haeufiges identisches Schreiben ist unschaedlich.
   current_snapshot: "{{ [v_40793, v_40795, v_40797, v_40799, 0, states(mode_select_entity)] | join('|') }}"
 
 triggers:
+  # Modus-Wechsel und dynamisches Ladeziel ohne Debounce: sofort übernehmen,
+  # nicht erst beim /2-min-Tick (Review 2026-07-04 - der 2-s-Debounce unten
+  # haette das bei hochfrequenten Sensor-Updates aushebeln koennen).
   - entity_id:
       - !input mode_select
-      - !input dynamic_charge_strength_sensor   # Drosselung sofort übernehmen, nicht erst beim /2-min-Tick
+      - !input dynamic_charge_strength_sensor
+    from: null
+    to: null
+    trigger: state
+
+  # Manuelle Soll-/Grenz-Helfer mit 2-s-Debounce (Anti-Flatter beim Slider-Ziehen).
+  # akkusteuerung_max_ladestaerke bewusst NICHT hier: wird im Standardpfad nirgends
+  # gelesen (Review 2026-07-04 - toter Trigger) - der Lade-Deckel kommt aus
+  # dyn_charge_entity, die den Helfer bereits upstream in ha-opti-akkusteuerung
+  # einrechnet (packages/opti_derived.yaml).
+  - entity_id:
       - input_number.akkusteuerung_entladestaerke_soll
       - input_number.akkusteuerung_ladestaerke_soll
       - input_number.akkusteuerung_min_ladestaerke
       - input_number.akkusteuerung_min_entladestaerke
-      - input_number.akkusteuerung_max_ladestaerke
       - input_number.akkusteuerung_max_entladestaerke
     from: null
     to: null
@@ -261,7 +290,7 @@ actions:
           value:
             - 65535
             - >-
-              {{ 65535 - states('input_number.akkusteuerung_ladestaerke_soll') | int }}
+              {{ 65535 - states('input_number.akkusteuerung_ladestaerke_soll') | int(0) }}
         action: modbus.write_register
       - action: input_text.set_value
         continue_on_error: true
@@ -294,7 +323,7 @@ actions:
           value:
             - 0
             - >-
-              {{ states('input_number.akkusteuerung_entladestaerke_soll') | int }}
+              {{ states('input_number.akkusteuerung_entladestaerke_soll') | int(0) }}
         action: modbus.write_register
       - action: input_text.set_value
         continue_on_error: true
