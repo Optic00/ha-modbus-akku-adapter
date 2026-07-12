@@ -6,14 +6,15 @@ Beweissprache (Codex-Review 12.7.): der Recorder liefert 5-s-Samples; "0 W" hei�
 Für Übergangs-Feinmessungen (B1-Follow-up) ist eine 1-s-Auflösung nötig.
 Diese Tests sind Release-Gate: kein Merge nach `main` und kein Release-Tag, bevor die Sperr-Tests bestanden sind (Adversarial-Review-Finding F1, 2026-07-12).
 
-Testlauf 1: 2026-07-12 vormittags (Deploy 10:12, PV-Überschuss 5-10 kW), Recorder-verifiziert.
-Offen bleiben die Verbrauch-über-PV-Fälle (abends nachholen), die Blind-Probe und die EV-/Regressionsfälle mit Auto.
+**GATE-STATUS 2026-07-12 21:35: ALLE Pflichttests BESTANDEN** (Testlauf 1 vormittags, B1/B4-Messung mittags, Abendblock Teil 1+2).
+Einziger offener optionaler Fall: "nur Laden"/Pause unter Wallbox-Schnellladelast (Entlade-Burst-Klasse evcc #18339) - braucht das Auto, blockiert den Merge nicht (Wächter überwacht diese Klasse im Betrieb).
+Testlauf 1: 2026-07-12 vormittags (Deploy 10:12, PV-Überschuss 5-10 kW), Recorder-verifiziert; Abendblock 18:05-21:30 mit 1-Hz-Logger.
 
 ## Sperr-Semantik (P1-Beweisführung)
 
-- [ ] Pause-Sperre bei Verbrauch > PV: Modus "Akku Pause", Entladeleistung bleibt 0 W über >= 10 min, SoC stabil. (OFFEN: Abendblock Teil 2, ~21:00)
+- [x] Pause-Sperre bei Verbrauch > PV: BESTANDEN 2026-07-12 20:52-21:03. Haus 1,3 kW > PV 0,6 kW; Entladung (619 W) stoppte um 20:51:24 OHNE Burst (Standard→Standard-Übergang, keine Schienen-Freigabe nötig); danach >11 min alle 1-s-Samples 0/0 W, Hauslast aus dem Netz.
 - [x] Pause-Sperre bei PV-Überschuss: BESTANDEN 2026-07-12 10:32-10:44. Fenster [0,0]/[0,0] + OpMod 303, Lade- UND Entladeleistung in allen 5-s-Samples 0 W, SoC konstant 54,4 %, Export 9-10 kW.
-- [ ] Entlade-Sperre: "Akku nur Laden" bei Verbrauch > PV: keine Entladung über >= 10 min. (OFFEN: Abendblock Teil 2, ~21:00)
+- [x] Entlade-Sperre: "Akku nur Laden" bei Verbrauch > PV: BESTANDEN 2026-07-12 21:04-21:16. Fenster [0,0] Entladen + OpMod 2289; 12 min alle 1-s-Samples 0/0 W trotz Hauslast (und korrekt kein Laden mangels Überschuss).
 - [x] Lade-Sperre: "Akku nur Entladen" bei PV-Überschuss: BESTANDEN 2026-07-12 10:16-10:26+. Fenster [0,0] Laden / [0,5052] Entladen + OpMod 2290, Ladeleistung in allen 5-s-Samples 0 W bei 5-9,5 kW Export, SoC konstant.
 
 ## Handoff Sperr-Modus → Schiene (F2-Validierung)
@@ -39,6 +40,8 @@ Offen bleiben die Verbrauch-über-PV-Fälle (abends nachholen), die Blind-Probe 
 - [x] Queue-Sättigung: BESTANDEN 18:14. 5 Modus-Wechsel in 12 s (schnell Entladen → Pause → Dynamisch → Pause → Dynamisch → Pause); Endzustand konvergierte auf korrektes Pause-Sperrset, keine "Already running"/max_exceeded-Warnungen.
 - [x] Status-Gate-Provokation: BESTANDEN 18:19-18:28 (inverter_ok_states temporär auf Dummy-Wert). Gate blockte alle Writes; Register liefen exakt 5:05 min nach letztem Write aus (Timeout damit 2x präzise belegt, vgl. B2); WR lud intern 94→98,4 % und stoppte selbst; Stillstands-Alarm pünktlich beim ersten /5-Tick mit Alter > 6 min (18:25). Verletzungs-Alarm korrekt STILL: interne Ladeepisode dauerte nur 1:55 min (< 3-min-Karenz) - Karenz wirkt wie designed.
 - [x] HA-Neustart-Smoke: BESTANDEN 18:46-18:49. Adapter lief sofort per ha_start-Trigger (18:48:00), Registersatz 3 s später geschrieben; Wächter, opti-Schicht und EV-Sensoren sauber zurück; keine Fehlalarme.
+
+- [x] Wächter-Entlade-Verletzungsprobe: BESTANDEN 21:24:18 (real provoziert: Adapter 21:18 aus in "nur Laden", interne Entladung ab 21:21:16 = 5:13 nach letztem Write - DRITTER Beleg für den ~5-min-Timeout; Entlade-Verletzungsalarm exakt nach der 3-min-Karenz via Template-Trigger, Stillstands-Alarm beim 21:25-Tick). Beide Wächter-Richtungen damit real bestanden.
 
 **Nebenbefunde Abendblock:**
 - Zweiter SoC-Resync des Tages während der Gate-Blockade (WR intern auf 100 %, Zellmax 3,619 V) - zweiter Ladeschluss-Datenpunkt für das Taper/Balancing-Feature (separater PR).
