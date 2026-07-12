@@ -161,3 +161,26 @@ def test_tracker_und_timestamp_in_schienen_branches():
         assert any(
             s.get("action") == "input_datetime.set_datetime" for s in branch["then"]
         ), f"{alias}: Timestamp fehlt"
+
+
+def test_zweiter_stale_guard_nach_freigabe():
+    """R1 (Codex-Review 2026-07-12): nach der ~3-s-Freigabesequenz muss der
+    Modus erneut geprüft werden, sonst schreibt der Standardpfad eingefrorene
+    positive Fenster unter einem frischen Sperr-OpMod."""
+    bp = load_blueprint()
+    actions = bp["actions"]
+    assert str(actions[1].get("alias", "")).startswith("CmpBMS-Freigabe")
+    guard2 = actions[2]
+    assert guard2.get("condition") == "template"
+    assert "run_modus" in guard2["value_template"]
+
+
+def test_freigabe_bedingung_liest_tracker_zur_ausfuehrungszeit():
+    """R2 (Codex-Review 2026-07-12): die Freigabe-Bedingung muss den Tracker
+    zur Ausführungszeit lesen (states(snapshot_helper) im Template), nicht
+    über eine beim Trigger eingefrorene Variable."""
+    bp = load_blueprint()
+    release = bp["actions"][1]
+    cond = release["if"][0]["value_template"]
+    assert "states(snapshot_helper)" in cond
+    assert "needs_cmpbms_release" not in cond

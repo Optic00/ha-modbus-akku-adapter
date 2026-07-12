@@ -95,6 +95,7 @@ variables:
   discharge_entity: !input discharge_power_sensor
   ts_helper: !input last_write_time_helper
   threshold_v: !input violation_threshold_w
+  violation_minutes_v: !input violation_minutes
   stall_minutes_v: !input stall_minutes
   notify_service_v: !input notify_service
   charge_locked_modes: ["Akku Pause", "Akku nur Entladen"]
@@ -145,8 +146,17 @@ actions:
       dsch_w: "{{ dsch_raw | float(0) }}"
       last_write_age_s: >-
         {{ (as_timestamp(now()) - as_timestamp(states(ts_helper), 0)) | round(0) }}
-      charge_violation: "{{ sensors_ok and modus in charge_locked_modes and cha_w > threshold_v }}"
-      discharge_violation: "{{ sensors_ok and modus in discharge_locked_modes and dsch_w > threshold_v }}"
+      # Karenzzeit auch fuer den Tick-Pfad (Codex-Review 2026-07-12, R3): wird
+      # in einen Sperr-Modus gewechselt, waehrend bereits Leistung anliegt,
+      # feuert der numeric_state-Trigger (mit for:) nicht erneut - der /5-Tick
+      # wuerde sonst SOFORT alarmieren, obwohl Adapter und WR den Uebergang
+      # noch abarbeiten. Deshalb gilt eine Verletzung erst, wenn der Modus
+      # mindestens violation_minutes lang unveraendert ansteht.
+      mode_age_ok: >-
+        {{ (as_timestamp(now()) - as_timestamp(states[mode_select_entity].last_changed, 0))
+           > (violation_minutes_v | int * 60) }}
+      charge_violation: "{{ sensors_ok and mode_age_ok and modus in charge_locked_modes and cha_w > threshold_v }}"
+      discharge_violation: "{{ sensors_ok and mode_age_ok and modus in discharge_locked_modes and dsch_w > threshold_v }}"
       stalled: "{{ last_write_age_s > stall_minutes_v | int * 60 }}"
   - choose:
       - conditions: "{{ trigger.id == 'sensor_weg' or (trigger.id == 'tick' and not sensors_ok) }}"

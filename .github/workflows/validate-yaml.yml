@@ -16,8 +16,8 @@ jobs:
         with:
           python-version: "3.x"
 
-      - name: Install PyYAML
-        run: pip install pyyaml
+      - name: Install dependencies
+        run: pip install pyyaml jinja2 pytest
 
       - name: Validate blueprint YAML (permissive !input tag)
         run: |
@@ -43,6 +43,9 @@ jobs:
 
           sys.exit(1 if failed else 0)
           PYEOF
+
+      - name: Run blueprint tests (Jinja-Fenster-Variablen + Struktur)
+        run: python3 -m pytest tests/ -v
 
       - name: Validate example/config YAML (plain)
         run: |

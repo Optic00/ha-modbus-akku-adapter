@@ -149,16 +149,12 @@ variables:
   # Der Stale-Guard als erste Action vergleicht diesen eingefrorenen Wert mit
   # dem zum Ausfuehrungszeitpunkt aktuellen Modus und verwirft veraltete Laeufe.
   run_modus: "{{ states(mode_select_entity) }}"
-  # Modus-Tracker (Haertung F2): letzter vom Adapter tatsaechlich geschriebener
-  # Modus, rekonstruiert aus dem Snapshot-Helfer (Standardpfad schreibt
-  # "...|<modus>", Kommando-/Automatik-Branches "CMD|<modus>"). Leer/unbekannt
-  # wird konservativ wie ein Sperr-Modus behandelt: die CmpBMS-Freigabe unten
-  # schadet dann nicht und verfaellt nach <= 300 s von selbst.
-  tracked_modus: "{{ (states(snapshot_helper).split('|') | last) if '|' in states(snapshot_helper) else '' }}"
-  needs_cmpbms_release: >-
-    {{ tracked_modus not in ['Akku Automatisch', 'Akku Dynamisch',
-                             'Akku schnell Laden', 'Akku schnell Entladen',
-                             'Akku Netzladen', 'Akku 0.2C Laden'] }}
+  # Der Modus-Tracker fuer die CmpBMS-Freigabe (Haertung F2) wird bewusst NICHT
+  # hier als Variable berechnet, sondern zur Ausfuehrungszeit in der Bedingung
+  # des Freigabe-Blocks unten: diese Variablen frieren beim Trigger ein, und
+  # ein queued-Lauf wuerde sonst die Freigabe unnoetig wiederholen, obwohl der
+  # erste Lauf den Tracker laengst auf "CMD|..." gesetzt hat (Codex-Review
+  # 2026-07-12, Finding R2).
   # Einschwing-Schutz: nach einem Wechsel IN "Akku Dynamisch" hat der WR beobachtet
   # (2x live reproduziert, 2026-07-01) bis zu ~5 Minuten eine unklare interne
   # Ladeleistungsgrenze (vermutlich Drift auf Maximalwert waehrend "nur Entladen").
@@ -290,12 +286,20 @@ actions:
   # Es verfaellt nach <= 300 s von selbst, falls es nicht erneuert wird.
   - alias: "CmpBMS-Freigabe beim Wechsel Sperr-Modus -> Kommando/Automatik"
     if:
+      # Tracker-Auswertung zur AUSFUEHRUNGSZEIT (nicht als eingefrorene
+      # Variable): letzter vom Adapter geschriebener Modus aus dem Snapshot-
+      # Helfer (Standardpfad "...|<modus>", Schienen-Branches "CMD|<modus>").
+      # Leer/unbekannt wird konservativ wie ein Sperr-Modus behandelt: die
+      # Freigabe schadet dann nicht und verfaellt nach <= 300 s von selbst.
       - condition: template
         value_template: >-
-          {{ run_modus in ['Akku Automatisch', 'Akku schnell Laden',
-                           'Akku schnell Entladen', 'Akku Netzladen',
-                           'Akku 0.2C Laden']
-             and needs_cmpbms_release }}
+          {% set rail = ['Akku Automatisch', 'Akku schnell Laden',
+                         'Akku schnell Entladen', 'Akku Netzladen',
+                         'Akku 0.2C Laden'] %}
+          {% set raw = states(snapshot_helper) %}
+          {% set tracked = (raw.split('|') | last) if '|' in raw else '' %}
+          {{ run_modus in rail
+             and tracked not in (rail + ['Akku Dynamisch']) }}
     then:
       - data:
           hub: !input modbus_hub
@@ -357,6 +361,18 @@ actions:
         action: modbus.write_register
       - delay:
           milliseconds: 500
+
+  # Zweiter Stale-Guard (Codex-Review 2026-07-12, Finding R1): kippt der Modus
+  # WAEHREND der ~3-s-Freigabesequenz zurueck in einen Sperr-Modus, wuerden
+  # die Schienen-Branches (frischer Modus-Read) uebersprungen und der
+  # Standardpfad schriebe die eingefrorenen POSITIVEN Fensterwerte des
+  # Kommando-Modus unter dem frischen Sperr-OpMod. Deshalb hier erneut
+  # pruefen und den Lauf verwerfen - der vom Moduswechsel getriggerte
+  # Folgelauf schreibt die korrekten [0,0]-Sperrfenster. Abbruch ist hier
+  # gefahrlos: 40151/802 wurde noch nicht aktiviert.
+  - alias: "Stale-Guard 2: Modus nach CmpBMS-Freigabe unveraendert?"
+    condition: template
+    value_template: "{{ states(mode_select_entity) == run_modus }}"
 
   - alias: Wenn Akku Automatik
     if:
