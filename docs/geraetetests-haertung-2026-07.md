@@ -11,9 +11,9 @@ Offen bleiben die Verbrauch-über-PV-Fälle (abends nachholen), die Blind-Probe 
 
 ## Sperr-Semantik (P1-Beweisführung)
 
-- [ ] Pause-Sperre bei Verbrauch > PV: Modus "Akku Pause", Entladeleistung bleibt 0 W über >= 10 min, SoC stabil. (OFFEN: abends)
+- [ ] Pause-Sperre bei Verbrauch > PV: Modus "Akku Pause", Entladeleistung bleibt 0 W über >= 10 min, SoC stabil. (OFFEN: Abendblock Teil 2, ~21:00)
 - [x] Pause-Sperre bei PV-Überschuss: BESTANDEN 2026-07-12 10:32-10:44. Fenster [0,0]/[0,0] + OpMod 303, Lade- UND Entladeleistung in allen 5-s-Samples 0 W, SoC konstant 54,4 %, Export 9-10 kW.
-- [ ] Entlade-Sperre: "Akku nur Laden" bei Verbrauch > PV: keine Entladung über >= 10 min. (OFFEN: abends)
+- [ ] Entlade-Sperre: "Akku nur Laden" bei Verbrauch > PV: keine Entladung über >= 10 min. (OFFEN: Abendblock Teil 2, ~21:00)
 - [x] Lade-Sperre: "Akku nur Entladen" bei PV-Überschuss: BESTANDEN 2026-07-12 10:16-10:26+. Fenster [0,0] Laden / [0,5052] Entladen + OpMod 2290, Ladeleistung in allen 5-s-Samples 0 W bei 5-9,5 kW Export, SoC konstant.
 
 ## Handoff Sperr-Modus → Schiene (F2-Validierung)
@@ -26,13 +26,25 @@ Offen bleiben die Verbrauch-über-PV-Fälle (abends nachholen), die Blind-Probe 
 
 - [x] Sperrverletzungs-Probe: BESTANDEN 2026-07-12 11:10:42 (realistische Provokation statt Schwellen-Trick: Adapter aus, Register liefen aus, WR lud intern 8,8 kW im Modus Pause). Template-Trigger feuerte nach exakt 3 min durchgehender Ladung; persistente Meldung + Push (mobile_app_iphone_15_ben) mit korrekten Werten (8811 W, Schwelle 100 W).
 - [x] Stillstands-Probe: BESTANDEN 2026-07-12 11:10:00 (Tick). Adapter 10:59 deaktiviert, Meldung beim ersten Tick mit Alter > 6 min (484 s beim Folgelauf). Nach Reaktivierung 11:12 keine grundlose Wiederholung (persistent_notification mit fester notification_id überschreibt sich zudem selbst).
-- [ ] Blind-Probe: einen der beiden Leistungssensoren testweise unavailable machen: "Wächter blind"-Meldung nach ~5 min. (OFFEN)
+- [x] Blind-Probe: BESTANDEN 2026-07-12 18:39:33 (realistische Simulation: SMA-Integration des Hybrid-WR 6,5 min deaktiviert, alle Sensoren unavailable). "Wächter blind"-Meldung exakt nach der 5-min-for:-Frist; Duplikat-Trigger des zweiten Sensors von mode: single korrekt verschluckt. Recovery nach Re-Enable sauber.
 
 ## Regression (bestehende Adapter-Checkliste)
 
-- [x] Pause / schnell Laden / Automatisch / Dynamisch-Übergänge live durchgetestet (Testlauf 1). "schnell Entladen" (OFFEN: abends bei Verbrauch, zusammen mit den Entlade-Sperr-Tests).
+- [x] Pause / schnell Laden / Automatisch / Dynamisch-Übergänge live durchgetestet (Testlauf 1). "schnell Entladen": BESTANDEN Abendblock 12.7. 18:08-18:14 (3 Zyklen bei PV-Überschuss, Sollwert punktgenau ~1950 W; Exits nach Pause 2x und nur Laden 1x, je mit 1-3-s-Burst und danach korrektem Zielzustand; "nur Laden" regelte anschließend sauber im dyn. Fenster ~1030 W).
 - [x] Dynamisch-Settling: BESTANDEN 2026-07-12 10:57. Nach Strategie-Rückschaltung auf Dynamisch: Snapshot 0|500|0|5052, Ladeleistung 558 W = Settling-Cap 500 W (+ Messtoleranz).
 - [x] Kein falscher Stillstandsalarm in Kommando-Modi: strukturell erfüllt (Timestamp-Pflege in allen Branches, Strukturtest); Langzeit-Fall > 6 min in "schnell Laden" implizit über den Betrieb weiter beobachten.
+
+## Abendblock Teil 1 (12.7. 18:05-18:55, 1-Hz-Logger parallel)
+
+- [x] Queue-Sättigung: BESTANDEN 18:14. 5 Modus-Wechsel in 12 s (schnell Entladen → Pause → Dynamisch → Pause → Dynamisch → Pause); Endzustand konvergierte auf korrektes Pause-Sperrset, keine "Already running"/max_exceeded-Warnungen.
+- [x] Status-Gate-Provokation: BESTANDEN 18:19-18:28 (inverter_ok_states temporär auf Dummy-Wert). Gate blockte alle Writes; Register liefen exakt 5:05 min nach letztem Write aus (Timeout damit 2x präzise belegt, vgl. B2); WR lud intern 94→98,4 % und stoppte selbst; Stillstands-Alarm pünktlich beim ersten /5-Tick mit Alter > 6 min (18:25). Verletzungs-Alarm korrekt STILL: interne Ladeepisode dauerte nur 1:55 min (< 3-min-Karenz) - Karenz wirkt wie designed.
+- [x] HA-Neustart-Smoke: BESTANDEN 18:46-18:49. Adapter lief sofort per ha_start-Trigger (18:48:00), Registersatz 3 s später geschrieben; Wächter, opti-Schicht und EV-Sensoren sauber zurück; keine Fehlalarme.
+
+**Nebenbefunde Abendblock:**
+- Zweiter SoC-Resync des Tages während der Gate-Blockade (WR intern auf 100 %, Zellmax 3,619 V) - zweiter Ladeschluss-Datenpunkt für das Taper/Balancing-Feature (separater PR).
+- Stall-Push wiederholt sich bei langem Ausfall alle 5 min (persistent_notification überschreibt sich, der Mobile-Push nicht) - vertretbar, Politur-Kandidat (Rate-Limit).
+- Manuell deaktivierte Automationen überleben den HA-Neustart nicht (Strategie kam automatisch wieder an - Restart-Durability wirkt in die sichere Richtung, aber bei Tests einplanen).
+- Exit-Burst (B1) auch in Gegenrichtung reproduziert: Exits aus schnell Entladen zeigen 1-2-s-Burst in LADErichtung (6,8-7,2 kW bei PV-Überschuss) - der WR greift in der Übernahmelücke, was die interne Regelung will. Insgesamt 4x reproduziert.
 
 ## Befunde
 
