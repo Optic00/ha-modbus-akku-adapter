@@ -36,12 +36,19 @@ Offen bleiben die Verbrauch-über-PV-Fälle (abends nachholen), die Blind-Probe 
 
 ## Befunde
 
-**B1 - Exit-Burst schnell Laden → Pause (2026-07-12 10:47:20):**
-Genau ein 5-s-Recorder-Sample mit 9661 W Ladeleistung zwischen 803-Write und Wirksamwerden der [0,0]-Fenster, danach hart 0 W.
-Energetische Einordnung (~0,02 kWh, Dauer 1-3 s) ist eine SCHÄTZUNG aus einem einzelnen 5-s-Sample; die physische Dauer wurde nicht gemessen (dafür 1-s-Auflösung nötig).
-Mechanik: 803 entlässt den WR für ~1-3 s in die interne Regelung, die bei großem PV-Überschuss sofort voll lädt, bis die Sperr-Fenster geschrieben sind.
-Follow-up-Kandidat: für Exits IN Sperr-Modi die Reihenfolge Fenster → OpMod → 803 testen; Voraussetzung ist der Gerätenachweis, dass CmpBMS-Writes bei aktiver 802-Schiene angenommen werden.
-Bis dahin bewusst so gelassen (Adversarial-Review-Abwägung F3: die Alternative ließe den alten Ladebefehl während der gesamten Schreibsequenz aktiv).
+**B1 - Exit-Burst schnell Laden → Pause: mit 1-s-Auflösung vermessen und als geräteinhärent eingestuft (2026-07-12 mittags, Messlog `messdaten-b1-praearm-20260712.log`):**
+Messaufbau: unabhängiger 1-Hz-Modbus-Logger (pymodbus, read-only auf 31393/31395), zwei normale Adapter-Exits schnell Laden (2 kW) → Pause bei ~10 kW PV-Überschuss.
+Reproduzierbares Muster in beiden Zyklen: nach dem Pause-Befehl läuft die 2-kW-Ladung noch ~10-13 s weiter (obwohl der komplette Pause-Satz nach ~4 s geschrieben ist), dann 2-3 s Burst auf ~10,7 kW (interne Regelung), dann hart 0 W.
+Energie pro Exit: ~0,006-0,009 kWh - vernachlässigbar.
+Einstufung: WR-interne Übernahmelatenz, KEIN Reihenfolge-Problem des Adapters; die Sperre greift zuverlässig, nur eben ~13-16 s nach dem Befehl.
+
+**B4 - Pre-Arm-Variante (Fenster/OpMod VOR 803) am Gerät DURCHGEFALLEN (2026-07-12 12:07-12:11):**
+Test: bei aktiver 802-Schiene (2 kW Laden) manuell kompletten CmpBMS-Satz [0,0]×4 + GridWSpt 0 + OpMod 303 geschrieben, je 500 ms Abstand.
+Ergebnis 1: die Schiene gewinnt - Laden lief unverändert mit ~2,06 kW weiter (Writes stören das Kommando nicht).
+Ergebnis 2 (entscheidend): nach dem anschließenden 803 sperrte der WR NICHT, sondern ging in dauerhafte interne Volllast (~10,7 kW, > 45 s, bis der Adapter den Satz nach 803 erneut schrieb).
+Die bei aktiver Schiene geschriebenen CmpBMS-Werte werden also verworfen, nicht armiert.
+Konsequenz: der Follow-up-Kandidat "Fenster vor 803" ist tot; die bestehende Reihenfolge (803 zuerst, dann Fenster+OpMod) ist die einzig funktionierende der beiden Varianten und bleibt.
+Der 2-3-s-Burst (B1) ist der geräteinhärente Preis dieser Mechanik und mit dem 2-min-Reconcile als Rückfallnetz akzeptiert; ein Abbruch der Schreibsequenz nach 803 verlängert die interne Phase bis zum Reconcile (bekanntes, dokumentiertes Restrisiko).
 
 **B2 - Register-Timeout-Timing:** Nach Adapter-Stopp 10:59 begann das interne Volllast-Laden ca. 11:04-11:07 (Sperrverletzungs-Trigger 11:10:42 minus 3 min for:-Fenster), also ~5-8 min nach dem letzten Schreibzyklus.
 Konsistent mit dem dokumentierten ~5-min-Rückfall der externen Steuerung bzw. der 300-s-Erneuerungspflicht.
