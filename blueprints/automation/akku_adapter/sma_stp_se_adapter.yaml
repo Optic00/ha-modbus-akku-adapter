@@ -362,17 +362,105 @@ actions:
       - delay:
           milliseconds: 500
 
-  # Zweiter Stale-Guard (Codex-Review 2026-07-12, Finding R1): kippt der Modus
-  # WAEHREND der ~3-s-Freigabesequenz zurueck in einen Sperr-Modus, wuerden
-  # die Schienen-Branches (frischer Modus-Read) uebersprungen und der
-  # Standardpfad schriebe die eingefrorenen POSITIVEN Fensterwerte des
-  # Kommando-Modus unter dem frischen Sperr-OpMod. Deshalb hier erneut
-  # pruefen und den Lauf verwerfen - der vom Moduswechsel getriggerte
-  # Folgelauf schreibt die korrekten [0,0]-Sperrfenster. Abbruch ist hier
-  # gefahrlos: 40151/802 wurde noch nicht aktiviert.
+  # Zweiter Stale-Guard (Codex-Reviews 2026-07-12, Findings R1 + S1): kippt
+  # der Modus WAEHREND der ~3-s-Freigabesequenz zurueck, wuerden die
+  # Schienen-Branches (frischer Modus-Read) uebersprungen und der Standardpfad
+  # schriebe die eingefrorenen POSITIVEN Fensterwerte des Kommando-Modus unter
+  # dem frischen Sperr-OpMod. Deshalb hier erneut pruefen. Ein nackter Abbruch
+  # reicht aber nicht (S1): wurde der Moduswechsel-Trigger wegen voller Queue
+  # verworfen (max_exceeded), bliebe das soeben geschriebene OFFENE
+  # Freigabe-Set bis zum 2-min-Tick stehen. Ist der frische Modus ein
+  # Sperr-Modus, wird deshalb vor dem Stop ein konservatives Sperr-Set
+  # geschrieben: beide Fenster [0,0] (bei "nur Laden"/"nur Entladen" bewusst
+  # ueber-sperrend - sicherer Fehlerzustand, der naechste Tick schreibt die
+  # korrekten Werte) plus das OpMod des frischen Modus. 40151/802 wurde noch
+  # nicht aktiviert, die Kommandoschiene braucht kein Cleanup.
   - alias: "Stale-Guard 2: Modus nach CmpBMS-Freigabe unveraendert?"
-    condition: template
-    value_template: "{{ states(mode_select_entity) == run_modus }}"
+    if:
+      - condition: template
+        value_template: "{{ states(mode_select_entity) != run_modus }}"
+    then:
+      - alias: "Sperr-Cleanup: frischer Modus ist Sperr-Modus"
+        if:
+          - condition: template
+            value_template: >-
+              {{ states(mode_select_entity) in
+                 ['Akku Pause', 'Akku nur Laden', 'Akku nur Entladen'] }}
+        then:
+          - data:
+              hub: !input modbus_hub
+              address: 40793
+              slave: 3
+              value:
+                - 0
+                - 0
+            action: modbus.write_register
+          - delay:
+              milliseconds: 500
+          - data:
+              hub: !input modbus_hub
+              address: 40795
+              slave: 3
+              value:
+                - 0
+                - 0
+            action: modbus.write_register
+          - delay:
+              milliseconds: 500
+          - data:
+              hub: !input modbus_hub
+              address: 40797
+              slave: 3
+              value:
+                - 0
+                - 0
+            action: modbus.write_register
+          - delay:
+              milliseconds: 500
+          - data:
+              hub: !input modbus_hub
+              address: 40799
+              slave: 3
+              value:
+                - 0
+                - 0
+            action: modbus.write_register
+          - delay:
+              milliseconds: 500
+          - data:
+              hub: !input modbus_hub
+              address: 40801
+              slave: 3
+              value:
+                - 0
+                - 0
+            action: modbus.write_register
+          - delay:
+              milliseconds: 500
+          - data:
+              hub: !input modbus_hub
+              address: 41259
+              slave: 3
+              value:
+                - 0
+                - >-
+                  {{ {'Akku Pause': 303,
+                      'Akku nur Laden': 2289,
+                      'Akku nur Entladen': 2290}.get(states(mode_select_entity), 303) }}
+            action: modbus.write_register
+          - action: input_text.set_value
+            continue_on_error: true
+            target:
+              entity_id: "{{ snapshot_helper }}"
+            data:
+              value: "0|0|0|0|0|{{ states(mode_select_entity) }}"
+          - action: input_datetime.set_datetime
+            continue_on_error: true
+            target:
+              entity_id: "{{ timestamp_helper }}"
+            data:
+              timestamp: "{{ now().timestamp() }}"
+      - stop: "Stale: Modus wechselte waehrend der CmpBMS-Freigabe"
 
   - alias: Wenn Akku Automatik
     if:

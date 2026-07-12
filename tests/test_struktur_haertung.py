@@ -164,15 +164,29 @@ def test_tracker_und_timestamp_in_schienen_branches():
 
 
 def test_zweiter_stale_guard_nach_freigabe():
-    """R1 (Codex-Review 2026-07-12): nach der ~3-s-Freigabesequenz muss der
-    Modus erneut geprüft werden, sonst schreibt der Standardpfad eingefrorene
-    positive Fenster unter einem frischen Sperr-OpMod."""
+    """R1+S1 (Codex-Reviews 2026-07-12): nach der ~3-s-Freigabesequenz muss
+    der Modus erneut geprüft werden; bei Staleness in einen Sperr-Modus muss
+    VOR dem Stop ein konservatives Sperr-Set ([0,0]-Fenster + OpMod)
+    geschrieben werden (verworfener Trigger bei voller Queue ließe sonst das
+    offene Freigabe-Set bis zum 2-min-Tick stehen)."""
     bp = load_blueprint()
     actions = bp["actions"]
     assert str(actions[1].get("alias", "")).startswith("CmpBMS-Freigabe")
     guard2 = actions[2]
-    assert guard2.get("condition") == "template"
-    assert "run_modus" in guard2["value_template"]
+    assert str(guard2.get("alias", "")).startswith("Stale-Guard 2")
+    assert "run_modus" in guard2["if"][0]["value_template"]
+    # Letzter Schritt: Stop; davor der Sperr-Cleanup-Zweig.
+    assert "stop" in guard2["then"][-1]
+    cleanup = guard2["then"][0]
+    assert str(cleanup.get("alias", "")).startswith("Sperr-Cleanup")
+    writes = [
+        s for s in cleanup["then"] if s.get("action") == "modbus.write_register"
+    ]
+    addrs = [w["data"]["address"] for w in writes]
+    assert addrs == [40793, 40795, 40797, 40799, 40801, 41259]
+    # Alle Fensterwerte des Cleanups sind 0 (konservativ ueber-sperrend).
+    for w in writes[:5]:
+        assert w["data"]["value"] == [0, 0]
 
 
 def test_freigabe_bedingung_liest_tracker_zur_ausfuehrungszeit():
