@@ -37,6 +37,8 @@ Testlauf 1: 2026-07-12 vormittags (Deploy 10:12, PV-Überschuss 5-10 kW), Record
 
 ## Abendblock Teil 1 (12.7. 18:05-18:55, 1-Hz-Logger parallel)
 
+Roh-Messlogs: `messdaten-abendblock-teil1-20260712.log` (18:05-19:05) und `messdaten-abendblock-teil2-20260712.log` (20:50-21:26), Format: Zeit, Lade-W (31393), Entlade-W (31395), 1 Hz.
+
 - [x] Queue-Sättigung: BESTANDEN 18:14. 5 Modus-Wechsel in 12 s (schnell Entladen → Pause → Dynamisch → Pause → Dynamisch → Pause); Endzustand konvergierte auf korrektes Pause-Sperrset, keine "Already running"/max_exceeded-Warnungen.
 - [x] Status-Gate-Provokation: BESTANDEN 18:19-18:28 (inverter_ok_states temporär auf Dummy-Wert). Gate blockte alle Writes; Register liefen exakt 5:05 min nach letztem Write aus (Timeout damit 2x präzise belegt, vgl. B2); WR lud intern 94→98,4 % und stoppte selbst; Stillstands-Alarm pünktlich beim ersten /5-Tick mit Alter > 6 min (18:25). Verletzungs-Alarm korrekt STILL: interne Ladeepisode dauerte nur 1:55 min (< 3-min-Karenz) - Karenz wirkt wie designed.
 - [x] HA-Neustart-Smoke: BESTANDEN 18:46-18:49. Adapter lief sofort per ha_start-Trigger (18:48:00), Registersatz 3 s später geschrieben; Wächter, opti-Schicht und EV-Sensoren sauber zurück; keine Fehlalarme.
