@@ -95,9 +95,11 @@ blueprint:
       name: "Helfer: Letzter Schreibwert (Diagnose)"
       description: >
         input_text-Helfer, der den Snapshot der zuletzt geschriebenen BMS-Wertregister
-        speichert (40793/40795/40797/40799/40801). Seit v1.6.0 reine Diagnose
-        (der Adapter schreibt unconditional); wird automatisch gepflegt, nicht
-        manuell setzen. Siehe examples/akkusteuerung_helpers.example.yaml.
+        speichert (40793/40795/40797/40799/40801) bzw. in Kommando-/Automatik-Modi
+        den Marker "CMD|<Modus>". Seit der Härtung 2026-07 wieder FUNKTIONAL:
+        dient als Modus-Tracker für die CmpBMS-Freigabe nach Sperr-Modi.
+        Wird automatisch gepflegt, nicht manuell setzen.
+        Siehe examples/akkusteuerung_helpers.example.yaml.
       default: input_text.akkusteuerung_modbus_letzter_schreibwert
       selector:
         entity:
@@ -141,6 +143,18 @@ variables:
   snapshot_helper: !input last_write_value_helper
   timestamp_helper: !input last_write_time_helper
   mode_select_entity: !input mode_select
+  # Beim Trigger eingefrorener Modus (Haertung 2026-07-12, Review-Finding F5):
+  # HA rendert diese Top-Level-Variablen beim Ausloesen der Automation; ein
+  # queued-Lauf kann danach warten und traegt dann veraltete Fensterwerte.
+  # Der Stale-Guard als erste Action vergleicht diesen eingefrorenen Wert mit
+  # dem zum Ausfuehrungszeitpunkt aktuellen Modus und verwirft veraltete Laeufe.
+  run_modus: "{{ states(mode_select_entity) }}"
+  # Der Modus-Tracker fuer die CmpBMS-Freigabe (Haertung F2) wird bewusst NICHT
+  # hier als Variable berechnet, sondern zur Ausfuehrungszeit in der Bedingung
+  # des Freigabe-Blocks unten: diese Variablen frieren beim Trigger ein, und
+  # ein queued-Lauf wuerde sonst die Freigabe unnoetig wiederholen, obwohl der
+  # erste Lauf den Tracker laengst auf "CMD|..." gesetzt hat (Codex-Review
+  # 2026-07-12, Finding R2).
   # Einschwing-Schutz: nach einem Wechsel IN "Akku Dynamisch" hat der WR beobachtet
   # (2x live reproduziert, 2026-07-01) bis zu ~5 Minuten eine unklare interne
   # Ladeleistungsgrenze (vermutlich Drift auf Maximalwert waehrend "nur Entladen").
@@ -172,19 +186,31 @@ variables:
   # alle Modi, die durch den Standardpfad laufen (Dynamisch, Pause, nur Laden,
   # nur Entladen) - nicht nur fuer Dynamisch, da der Invariantenbruch im
   # Live-Vorfall gerade in "nur Laden" (2289) auftrat.
+  # Sperr-Modi (Haertung P1, 2026-07-12, Huawei-Lektion G2): die OpMod-Flags
+  # 303/2289/2290 sind am SMA nicht als harte Sperre bewiesen. Als zusaetzliche
+  # Verteidigungslinie wird das jeweils verbotene Fenster auf [0, 0] gezwungen
+  # statt unconditional positiv geschrieben (Entlade-Sperre via BatDschMaxW=0
+  # ist das evcc-"hold"-Muster, Lade-Sperre via BatChaMaxW=0 analog). Achtung:
+  # auch die 0-W-Fenster sind am SMA UNBEWIESEN (Gerätetests = Release-Gate;
+  # evcc-Issue #18339 zeigt sogar kurze Entlade-Bursts trotz 40799=0) - deshalb
+  # bleiben die OpMod-Flags gesetzt und der Waechter-Blueprint ueberwacht die
+  # Wirkung. [0, 0] ist von der Grenzfenster-Invariante ausdruecklich erlaubt.
+  charge_locked: "{{ run_modus in ['Akku Pause', 'Akku nur Entladen'] }}"
+  discharge_locked: "{{ run_modus in ['Akku Pause', 'Akku nur Laden'] }}"
   v_charge_floor: "{{ [states('input_number.akkusteuerung_min_ladestaerke') | int(0), 0] | max }}"
   v_charge_target_raw: "{{ [states(dyn_charge_entity) | int(0), 0] | max }}"
   v_charge_target: "{{ [v_charge_target_raw, dynamisch_settling_cap_w] | min if dynamisch_settling else v_charge_target_raw }}"
-  v_40795: "{{ 0 if v_charge_target < v_charge_floor else v_charge_target }}"
+  v_40795: "{{ 0 if charge_locked else (0 if v_charge_target < v_charge_floor else v_charge_target) }}"
   v_40793: "{{ v_charge_floor if 0 < v_charge_floor and v_charge_floor < v_40795 else 0 }}"
   v_discharge_floor: "{{ [states('input_number.akkusteuerung_min_entladestaerke') | int(0), 0] | max }}"
   v_discharge_target: "{{ [states('input_number.akkusteuerung_max_entladestaerke') | int(0), 0] | max }}"
-  v_40799: "{{ 0 if v_discharge_target < v_discharge_floor else v_discharge_target }}"
+  v_40799: "{{ 0 if discharge_locked else (0 if v_discharge_target < v_discharge_floor else v_discharge_target) }}"
   v_40797: "{{ v_discharge_floor if 0 < v_discharge_floor and v_discharge_floor < v_40799 else 0 }}"
-  # Snapshot (inkl. Modus) ist seit v1.6.0 reine Diagnose: der Adapter schreibt
-  # bei jedem Lauf unconditional. Die Register sind Write-Only-Sollwerte, kein
-  # persistierter Speicher - haeufiges identisches Schreiben ist unschaedlich.
-  current_snapshot: "{{ [v_40793, v_40795, v_40797, v_40799, 0, states(mode_select_entity)] | join('|') }}"
+  # Snapshot: v1.6.0 machte ihn zur reinen Diagnose (der Adapter schreibt bei
+  # jedem Lauf unconditional); seit der Haertung 2026-07 ist das Modus-Feld
+  # (letztes Feld) wieder funktional als Tracker fuer die CmpBMS-Freigabe
+  # (siehe tracked_modus oben). Die Wertefelder bleiben Diagnose.
+  current_snapshot: "{{ [v_40793, v_40795, v_40797, v_40799, 0, run_modus] | join('|') }}"
 
 triggers:
   # Modus-Wechsel und dynamisches Ladeziel ohne Debounce: sofort übernehmen,
@@ -216,7 +242,7 @@ triggers:
 
   # /2 min statt /4 (Legacy): SMA verlangt zyklische Erneuerung max. alle 300 s.
   # Bei /2 min bleibt das Fenster selbst dann eingehalten, wenn ein einzelner
-  # Lauf ausfaellt (mode: single-Kollision oder Status-Gate) - bei /4 min nicht.
+  # Lauf ausfaellt (Queue-Verwurf oder Status-Gate) - bei /4 min nicht.
   - minutes: /2
     trigger: time_pattern
 
@@ -241,6 +267,201 @@ conditions:
     value_template: "{{ states(inverter_status_entity) in inverter_ok_states }}"
 
 actions:
+  # Stale-Guard (Haertung P4/F5): die v_*-Fenstervariablen sind beim Trigger
+  # eingefroren; ein queued-Lauf kann veraltete Werte tragen. Weicht der
+  # aktuelle Modus vom eingefrorenen ab, wird dieser Lauf komplett verworfen,
+  # BEVOR irgendein Register geschrieben wird - der durch den Moduswechsel
+  # getriggerte Folgelauf (bzw. der 2-min-Tick) uebernimmt mit frischen Werten.
+  - alias: "Stale-Guard: Modus unveraendert seit Trigger?"
+    condition: template
+    value_template: "{{ states(mode_select_entity) == run_modus }}"
+
+  # CmpBMS-Freigabe (Haertung F2): nach einem Sperr-Modus bleiben [0,0]-Fenster
+  # und Sperr-OpMod bis zum ~300-s-Timeout im WR stehen, weil die Kommando-
+  # und Automatik-Branches die CmpBMS-Familie sonst nicht anfassen. Sie
+  # koennten den Kommando-Start blockieren oder verzoegern (Geraeteverhalten
+  # unbelegt, Gerätetest offen). Deshalb: beim Eintritt in einen Schienen-Modus
+  # aus einem Sperr-Modus (oder unbekanntem Zustand, per Tracker erkannt)
+  # einmalig ein offenes Freigabe-Set schreiben - Fenster offen, OpMod 1438.
+  # Es verfaellt nach <= 300 s von selbst, falls es nicht erneuert wird.
+  - alias: "CmpBMS-Freigabe beim Wechsel Sperr-Modus -> Kommando/Automatik"
+    if:
+      # Tracker-Auswertung zur AUSFUEHRUNGSZEIT (nicht als eingefrorene
+      # Variable): letzter vom Adapter geschriebener Modus aus dem Snapshot-
+      # Helfer (Standardpfad "...|<modus>", Schienen-Branches "CMD|<modus>").
+      # Leer/unbekannt wird konservativ wie ein Sperr-Modus behandelt: die
+      # Freigabe schadet dann nicht und verfaellt nach <= 300 s von selbst.
+      - condition: template
+        value_template: >-
+          {% set rail = ['Akku Automatisch', 'Akku schnell Laden',
+                         'Akku schnell Entladen', 'Akku Netzladen',
+                         'Akku 0.2C Laden'] %}
+          {% set raw = states(snapshot_helper) %}
+          {% set tracked = (raw.split('|') | last) if '|' in raw else '' %}
+          {{ run_modus in rail
+             and tracked not in (rail + ['Akku Dynamisch']) }}
+    then:
+      - data:
+          hub: !input modbus_hub
+          address: 40793
+          slave: 3
+          value:
+            - 0
+            - 0
+        action: modbus.write_register
+      - delay:
+          milliseconds: 500
+      - data:
+          hub: !input modbus_hub
+          address: 40795
+          slave: 3
+          value:
+            - 0
+            - 10000
+        action: modbus.write_register
+      - delay:
+          milliseconds: 500
+      - data:
+          hub: !input modbus_hub
+          address: 40797
+          slave: 3
+          value:
+            - 0
+            - 0
+        action: modbus.write_register
+      - delay:
+          milliseconds: 500
+      - data:
+          hub: !input modbus_hub
+          address: 40799
+          slave: 3
+          value:
+            - 0
+            - 10000
+        action: modbus.write_register
+      - delay:
+          milliseconds: 500
+      - data:
+          hub: !input modbus_hub
+          address: 40801
+          slave: 3
+          value:
+            - 0
+            - 0
+        action: modbus.write_register
+      - delay:
+          milliseconds: 500
+      - data:
+          hub: !input modbus_hub
+          address: 41259
+          slave: 3
+          value:
+            - 0
+            - 1438
+        action: modbus.write_register
+      - delay:
+          milliseconds: 500
+
+  # Zweiter Stale-Guard (Codex-Reviews 2026-07-12, Findings R1 + S1): kippt
+  # der Modus WAEHREND der ~3-s-Freigabesequenz zurueck, wuerden die
+  # Schienen-Branches (frischer Modus-Read) uebersprungen und der Standardpfad
+  # schriebe die eingefrorenen POSITIVEN Fensterwerte des Kommando-Modus unter
+  # dem frischen Sperr-OpMod. Deshalb hier erneut pruefen. Ein nackter Abbruch
+  # reicht aber nicht (S1): wurde der Moduswechsel-Trigger wegen voller Queue
+  # verworfen (max_exceeded), bliebe das soeben geschriebene OFFENE
+  # Freigabe-Set bis zum 2-min-Tick stehen. Ist der frische Modus ein
+  # Sperr-Modus, wird deshalb vor dem Stop ein konservatives Sperr-Set
+  # geschrieben: beide Fenster [0,0] (bei "nur Laden"/"nur Entladen" bewusst
+  # ueber-sperrend - sicherer Fehlerzustand, der naechste Tick schreibt die
+  # korrekten Werte) plus das OpMod des frischen Modus. 40151/802 wurde noch
+  # nicht aktiviert, die Kommandoschiene braucht kein Cleanup.
+  - alias: "Stale-Guard 2: Modus nach CmpBMS-Freigabe unveraendert?"
+    if:
+      - condition: template
+        value_template: "{{ states(mode_select_entity) != run_modus }}"
+    then:
+      - alias: "Sperr-Cleanup: frischer Modus ist Sperr-Modus"
+        if:
+          - condition: template
+            value_template: >-
+              {{ states(mode_select_entity) in
+                 ['Akku Pause', 'Akku nur Laden', 'Akku nur Entladen'] }}
+        then:
+          - data:
+              hub: !input modbus_hub
+              address: 40793
+              slave: 3
+              value:
+                - 0
+                - 0
+            action: modbus.write_register
+          - delay:
+              milliseconds: 500
+          - data:
+              hub: !input modbus_hub
+              address: 40795
+              slave: 3
+              value:
+                - 0
+                - 0
+            action: modbus.write_register
+          - delay:
+              milliseconds: 500
+          - data:
+              hub: !input modbus_hub
+              address: 40797
+              slave: 3
+              value:
+                - 0
+                - 0
+            action: modbus.write_register
+          - delay:
+              milliseconds: 500
+          - data:
+              hub: !input modbus_hub
+              address: 40799
+              slave: 3
+              value:
+                - 0
+                - 0
+            action: modbus.write_register
+          - delay:
+              milliseconds: 500
+          - data:
+              hub: !input modbus_hub
+              address: 40801
+              slave: 3
+              value:
+                - 0
+                - 0
+            action: modbus.write_register
+          - delay:
+              milliseconds: 500
+          - data:
+              hub: !input modbus_hub
+              address: 41259
+              slave: 3
+              value:
+                - 0
+                - >-
+                  {{ {'Akku Pause': 303,
+                      'Akku nur Laden': 2289,
+                      'Akku nur Entladen': 2290}.get(states(mode_select_entity), 303) }}
+            action: modbus.write_register
+          - action: input_text.set_value
+            continue_on_error: true
+            target:
+              entity_id: "{{ snapshot_helper }}"
+            data:
+              value: "0|0|0|0|0|{{ states(mode_select_entity) }}"
+          - action: input_datetime.set_datetime
+            continue_on_error: true
+            target:
+              entity_id: "{{ timestamp_helper }}"
+            data:
+              timestamp: "{{ now().timestamp() }}"
+      - stop: "Stale: Modus wechselte waehrend der CmpBMS-Freigabe"
+
   - alias: Wenn Akku Automatik
     if:
       - condition: state
@@ -265,6 +486,21 @@ actions:
             - 0
             - 803
         action: modbus.write_register
+      # Tracker + Zeitstempel (Haertung F2/F6): auch Schienen-Branches pflegen
+      # den Modus-Tracker und den Schreibzeitpunkt, sonst meldet der Waechter
+      # faelschlich Stillstand und die CmpBMS-Freigabe kennt den Vorzustand nicht.
+      - action: input_text.set_value
+        continue_on_error: true
+        target:
+          entity_id: "{{ snapshot_helper }}"
+        data:
+          value: "CMD|{{ run_modus }}"
+      - action: input_datetime.set_datetime
+        continue_on_error: true
+        target:
+          entity_id: "{{ timestamp_helper }}"
+        data:
+          timestamp: "{{ now().timestamp() }}"
       - stop: ""
 
   - alias: Wenn Akku schnell Laden
@@ -283,6 +519,26 @@ actions:
         action: modbus.write_register
       - delay:
           seconds: 2
+      # Stale-Cleanup (Haertung P4/F4): der Modus kann sich waehrend des Delays
+      # geaendert haben. Dann NICHT einfach abbrechen (das liesse die soeben
+      # aktivierte 802-Schiene mit altem Sollwert stehen), sondern die Schiene
+      # explizit deaktivieren und stoppen - der Folgelauf setzt den neuen Modus.
+      - alias: "Stale-Cleanup: Modus noch schnell Laden?"
+        if:
+          - condition: template
+            value_template: "{{ states(mode_select_entity) != 'Akku schnell Laden' }}"
+        then:
+          - data:
+              hub: !input modbus_hub
+              address: 40151
+              slave: 3
+              value:
+                - 0
+                - 803
+            action: modbus.write_register
+          - stop: "Stale: Modus wechselte waehrend des Delays"
+      # Klemmung 0..10000 W (Review-Befund 2026-07-09): verhindert ungueltige
+      # 16-Bit-Woerter bei defektem Upstream-Sensor/Helfer (STP SE 10.0 = 10 kW).
       - data:
           hub: !input modbus_hub
           address: 40149
@@ -290,14 +546,20 @@ actions:
           value:
             - 65535
             - >-
-              {{ 65535 - states('input_number.akkusteuerung_ladestaerke_soll') | int(0) }}
+              {{ 65535 - ([[states('input_number.akkusteuerung_ladestaerke_soll') | int(0), 0] | max, 10000] | min) }}
         action: modbus.write_register
       - action: input_text.set_value
         continue_on_error: true
         target:
           entity_id: "{{ snapshot_helper }}"
         data:
-          value: ""
+          value: "CMD|{{ run_modus }}"
+      - action: input_datetime.set_datetime
+        continue_on_error: true
+        target:
+          entity_id: "{{ timestamp_helper }}"
+        data:
+          timestamp: "{{ now().timestamp() }}"
       - stop: fertig
 
   - alias: Wenn Akku schnell Entladen
@@ -316,6 +578,20 @@ actions:
         action: modbus.write_register
       - delay:
           seconds: 2
+      - alias: "Stale-Cleanup: Modus noch schnell Entladen?"
+        if:
+          - condition: template
+            value_template: "{{ states(mode_select_entity) != 'Akku schnell Entladen' }}"
+        then:
+          - data:
+              hub: !input modbus_hub
+              address: 40151
+              slave: 3
+              value:
+                - 0
+                - 803
+            action: modbus.write_register
+          - stop: "Stale: Modus wechselte waehrend des Delays"
       - data:
           hub: !input modbus_hub
           address: 40149
@@ -323,14 +599,20 @@ actions:
           value:
             - 0
             - >-
-              {{ states('input_number.akkusteuerung_entladestaerke_soll') | int(0) }}
+              {{ [[states('input_number.akkusteuerung_entladestaerke_soll') | int(0), 0] | max, 10000] | min }}
         action: modbus.write_register
       - action: input_text.set_value
         continue_on_error: true
         target:
           entity_id: "{{ snapshot_helper }}"
         data:
-          value: ""
+          value: "CMD|{{ run_modus }}"
+      - action: input_datetime.set_datetime
+        continue_on_error: true
+        target:
+          entity_id: "{{ timestamp_helper }}"
+        data:
+          timestamp: "{{ now().timestamp() }}"
       - stop: fertig
 
   # Nutzt seit v1.5.0 dieselbe 40151/40149-Kommandoschiene wie "Akku schnell
@@ -357,6 +639,20 @@ actions:
         action: modbus.write_register
       - delay:
           seconds: 2
+      - alias: "Stale-Cleanup: Modus noch Netzladen?"
+        if:
+          - condition: template
+            value_template: "{{ states(mode_select_entity) != 'Akku Netzladen' }}"
+        then:
+          - data:
+              hub: !input modbus_hub
+              address: 40151
+              slave: 3
+              value:
+                - 0
+                - 803
+            action: modbus.write_register
+          - stop: "Stale: Modus wechselte waehrend des Delays"
       - data:
           hub: !input modbus_hub
           address: 40149
@@ -364,14 +660,20 @@ actions:
           value:
             - 65535
             - >-
-              {{ 65535 - states(dyn_charge_entity) | int(0) }}
+              {{ 65535 - ([[states(dyn_charge_entity) | int(0), 0] | max, 10000] | min) }}
         action: modbus.write_register
       - action: input_text.set_value
         continue_on_error: true
         target:
           entity_id: "{{ snapshot_helper }}"
         data:
-          value: ""
+          value: "CMD|{{ run_modus }}"
+      - action: input_datetime.set_datetime
+        continue_on_error: true
+        target:
+          entity_id: "{{ timestamp_helper }}"
+        data:
+          timestamp: "{{ now().timestamp() }}"
       - stop: fertig
 
   # 0.2C nutzt dieselbe 40151/40149-Kommandoschiene und steht deshalb wie die
@@ -394,6 +696,20 @@ actions:
         action: modbus.write_register
       - delay:
           seconds: 2
+      - alias: "Stale-Cleanup: Modus noch 0.2C Laden?"
+        if:
+          - condition: template
+            value_template: "{{ states(mode_select_entity) != 'Akku 0.2C Laden' }}"
+        then:
+          - data:
+              hub: !input modbus_hub
+              address: 40151
+              slave: 3
+              value:
+                - 0
+                - 803
+            action: modbus.write_register
+          - stop: "Stale: Modus wechselte waehrend des Delays"
       # 0.2C-Ladeleistung = 0,2 × Batterie-Nennkapazität (Wh) → W; kein manueller Helfer nötig.
       # Kapazität nicht verfügbar → 0 → 65535-0=65535 → ~1 W (praktisch null, harmlos).
       - data:
@@ -403,14 +719,20 @@ actions:
           value:
             - 65535
             - >-
-              {{ 65535 - ((0.2 * states(capacity_entity) | float(0)) | round(0) | int) }}
+              {{ 65535 - ([[(0.2 * states(capacity_entity) | float(0)) | round(0) | int, 0] | max, 10000] | min) }}
         action: modbus.write_register
       - action: input_text.set_value
         continue_on_error: true
         target:
           entity_id: "{{ snapshot_helper }}"
         data:
-          value: ""
+          value: "CMD|{{ run_modus }}"
+      - action: input_datetime.set_datetime
+        continue_on_error: true
+        target:
+          entity_id: "{{ timestamp_helper }}"
+        data:
+          timestamp: "{{ now().timestamp() }}"
       - stop: fertig
 
   # --- Standardpfad: Fremdsteuerung deaktivieren (Sollwert-Schiene aus), dann
@@ -418,7 +740,19 @@ actions:
   #     Automation "Akkusteuerung 2.0" (unconditional, /2-min-Zyklus). Die
   #     Register sind Write-Only-Sollwerte: identisches Wiederschreiben ist
   #     unschaedlich. Delays 500 ms statt 1 s (SMA: kompletter Satz muss
-  #     innerhalb von 10 s gesetzt sein - so bleibt mehr Marge). ---
+  #     innerhalb von 10 s gesetzt sein - so bleibt mehr Marge).
+  #
+  #     Reihenfolge (Haertung P2, geprueft und BEWUSST NICHT gedreht,
+  #     Adversarial-Review 2026-07-12): 803 zuerst neutralisiert eine evtl.
+  #     noch aktive 40149-Vorgabe sofort - beim Exit aus einem Lade-Kommando
+  #     ist genau DAS die Restriktion. Danach kommen die Fensterregister, die
+  #     seit Haertung P1 in Sperr-Modi bereits restriktiv ([0,0]) sind, und
+  #     erst zuletzt das OpMod-Register (Enable). Ein 803 am Sequenz-Ende
+  #     wuerde stattdessen den alten Ladebefehl waehrend der gesamten
+  #     Schreibsequenz aktiv lassen. Restrisiko der jetzigen Reihenfolge:
+  #     zwischen 803 und den Fenster-Writes regelt der WR ~0,5-3 s intern
+  #     (kein definierter Sperrzustand) - akzeptiert, weil kurz, und vom
+  #     2-min-Reconcile geheilt, falls die Sequenz abbricht. ---
   - data:
       hub: !input modbus_hub
       address: 40151
@@ -563,4 +897,11 @@ actions:
         action: modbus.write_register
 
 
-mode: single
+# queued statt single (Haertung P4, Huawei-Befund G3): ein waehrend eines
+# Laufs eintreffender Moduswechsel-Trigger geht nicht mehr still verloren,
+# sondern laeuft als naechster Voll-Reconcile nach. max: 3 reicht, weil jeder
+# Lauf per Stale-Guard nur mit frischem Modus schreibt; verworfene Trigger
+# (max_exceeded) heilt der 2-min-Tick.
+mode: queued
+max: 3
+max_exceeded: silent

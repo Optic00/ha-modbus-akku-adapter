@@ -389,6 +389,19 @@ nicht gezielt auf einen Leistungs-Spike geprüft.
 Empfehlung für Produktiv-Rollout: diesen Übergang einmal beobachten, auch wenn das Restrisiko nach der
 Mechanik-Umstellung als gering einzuschätzen ist.
 
+**Sperr-Modi: 0-W-Fenster als zusätzliche Verteidigungslinie neben den OpMod-Flags (Härtung 2026-07-12):**
+Beim baugleichen Huawei-Adapter zeigte ein Gerätetest (Projekt ha-hesselmann, Befund G2), dass ein reines Verbots-Flag den Akku nicht am Laden hinderte; hart wirkten dort nur 0-W-Leistungsgrenzen.
+Für SMA ist die Entlade-Sperre über `BatDschMaxW` = 0 Community-erprobt (evcc-"hold"-Modus, siehe oben); die Lade-Sperre über `BatChaMaxW` = 0 folgt derselben Fenster-Semantik, ist am STP SE aber **nicht durch eigenen Gerätetest belegt**.
+Der Adapter schreibt deshalb seit der Härtung in den Sperr-Modi das jeweils verbotene Fenster als `[0, 0]` (Pause: beide Fenster) statt unconditional positiver Werte; die OpMod-Flags 303/2289/2290 bleiben zusätzlich gesetzt.
+Beides gilt bis zu bestandenen Gerätetests als unbewiesen; die Tests (siehe `docs/geraetetests-haertung-2026-07.md`) sind Release-Gate.
+Ein Write-Readback zur Verifikation ist nicht möglich, weil die Schreibregister flüchtig sind und als 0/null zurücklesen (siehe "Persistenz" im Community-Abschnitt); die Überwachung übernimmt der Wächter-Blueprint (`sma_stp_se_wachter.yaml`) verhaltensbasiert über die Ist-Leistungssensoren 31393/31395.
+Bekannte Rest-Lücke: ein evcc-Nutzer beobachtete kurze Entlade-Bursts trotz `BatDschMaxW` = 0 während Wallbox-Schnellladen (Issue #18339, ungelöst geschlossen) - genau solche Fälle meldet der Wächter.
+Handoff-Verhalten (Gerätetest 2026-07-12, STP SE 10.0, FW-Stand Bens Anlage, 1-Hz-Messung): der Wechsel Sperr-Modus → Kommandoschiene funktioniert ohne Verzögerung (~15 s bis Sollwert); der Adapter schreibt beim Wechsel Sperr-Modus → Kommando-/Automatik-Modus einmalig ein offenes Freigabe-Set (Fenster offen, OpMod 1438), erkannt über den Modus-Tracker im Schreibwert-Helfer.
+
+**Zwei am Gerät bewiesene Grundgesetze der beiden Steuerfamilien (Gerätetest 2026-07-12, 1-Hz-Messlog im Repo):**
+1. **CmpBMS-Writes bei aktiver 802-Schiene werden VERWORFEN, nicht armiert.** Kompletter Satz ([0,0]-Fenster + GridWSpt + OpMod 303, je 500 ms Abstand) während aktiver 40151=802/40149-Vorgabe geschrieben: das Kommando lief unbeeinflusst weiter, und nach dem 803 sperrte der WR NICHT, sondern fiel in dauerhafte interne Volllast-Regelung, bis der Satz NACH dem 803 erneut geschrieben wurde. Ein "Pre-Arm" der Sperr-Register vor der Schienen-Freigabe ist damit unmöglich; die Reihenfolge 803 → Fenster → OpMod ist die einzig funktionierende.
+2. **Der WR hat ~10-16 s Übernahmelatenz beim Exit aus der Kommandoschiene.** Nach 803 + komplettem Sperr-Satz (fertig nach ~4 s) lief der alte Sollwert noch ~10-13 s weiter, dann 2-3 s interne Volllast (~10,7 kW Burst), dann greift die Sperre hart. Reproduziert in 2 Zyklen; energetisch ~0,008 kWh pro Exit. Das ist Geräteverhalten, keine Adapter-Schwäche - durch Schreibreihenfolgen nicht vermeidbar.
+
 **Für eigene Nutzung der BMS-Leistungsgrenzen-Register (40793–40801):**
 Als Grenzfenster (Min = 0, Max als Deckel) im Modus Dynamisch sind die Register erprobt und die empfohlene Nutzung.
 Wer sie darüber hinaus als aktive Ladesteuerung einsetzen will (insbesondere Min > 0 oder Min = Max), sollte das Verhalten am eigenen WR selbst verifizieren - der Befund oben zeigt, dass das mindestens im 2289-Kontext nicht funktioniert.
