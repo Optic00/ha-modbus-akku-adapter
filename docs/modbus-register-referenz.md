@@ -389,6 +389,15 @@ nicht gezielt auf einen Leistungs-Spike geprüft.
 Empfehlung für Produktiv-Rollout: diesen Übergang einmal beobachten, auch wenn das Restrisiko nach der
 Mechanik-Umstellung als gering einzuschätzen ist.
 
+**Sperr-Modi: 0-W-Fenster als zusätzliche Verteidigungslinie neben den OpMod-Flags (Härtung 2026-07-12):**
+Beim baugleichen Huawei-Adapter zeigte ein Gerätetest (Projekt ha-hesselmann, Befund G2), dass ein reines Verbots-Flag den Akku nicht am Laden hinderte; hart wirkten dort nur 0-W-Leistungsgrenzen.
+Für SMA ist die Entlade-Sperre über `BatDschMaxW` = 0 Community-erprobt (evcc-"hold"-Modus, siehe oben); die Lade-Sperre über `BatChaMaxW` = 0 folgt derselben Fenster-Semantik, ist am STP SE aber **nicht durch eigenen Gerätetest belegt**.
+Der Adapter schreibt deshalb seit der Härtung in den Sperr-Modi das jeweils verbotene Fenster als `[0, 0]` (Pause: beide Fenster) statt unconditional positiver Werte; die OpMod-Flags 303/2289/2290 bleiben zusätzlich gesetzt.
+Beides gilt bis zu bestandenen Gerätetests als unbewiesen; die Tests (siehe `docs/geraetetests-haertung-2026-07.md`) sind Release-Gate.
+Ein Write-Readback zur Verifikation ist nicht möglich, weil die Schreibregister flüchtig sind und als 0/null zurücklesen (siehe "Persistenz" im Community-Abschnitt); die Überwachung übernimmt der Wächter-Blueprint (`sma_stp_se_wachter.yaml`) verhaltensbasiert über die Ist-Leistungssensoren 31393/31395.
+Bekannte Rest-Lücke: ein evcc-Nutzer beobachtete kurze Entlade-Bursts trotz `BatDschMaxW` = 0 während Wallbox-Schnellladen (Issue #18339, ungelöst geschlossen) - genau solche Fälle meldet der Wächter.
+Offener Gerätetest zum Handoff: Verhalten der 40149-Kommandoschiene, wenn zuvor `[0, 0]`-Fenster + Sperr-OpMod geschrieben wurden; der Adapter schreibt beim Wechsel Sperr-Modus → Kommando-/Automatik-Modus deshalb einmalig ein offenes Freigabe-Set (Fenster offen, OpMod 1438), erkannt über den Modus-Tracker im Schreibwert-Helfer.
+
 **Für eigene Nutzung der BMS-Leistungsgrenzen-Register (40793–40801):**
 Als Grenzfenster (Min = 0, Max als Deckel) im Modus Dynamisch sind die Register erprobt und die empfohlene Nutzung.
 Wer sie darüber hinaus als aktive Ladesteuerung einsetzen will (insbesondere Min > 0 oder Min = Max), sollte das Verhalten am eigenen WR selbst verifizieren - der Befund oben zeigt, dass das mindestens im 2289-Kontext nicht funktioniert.

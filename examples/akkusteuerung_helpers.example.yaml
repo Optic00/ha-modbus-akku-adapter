@@ -34,16 +34,20 @@ input_select:
       - Akku 0.2C Laden        # Preset: 0,2 × Kapazität, automatisch (kein Helfer nötig)
 
 input_text:
-  # Speichert den Snapshot der zuletzt geschriebenen BMS-Wertregister
-  # (Schreib-Diagnose, ab v1.2.0; seit v1.6.0 rein informativ). Wird vom Adapter automatisch gepflegt,
+  # Speichert den Snapshot der zuletzt geschriebenen BMS-Wertregister bzw.
+  # "CMD|<Modus>" in Kommando-/Automatik-Modi (ab v1.2.0; v1.6.0 rein
+  # informativ, seit Haertung 2026-07 wieder FUNKTIONAL als Modus-Tracker
+  # fuer die CmpBMS-Freigabe). Wird vom Adapter automatisch gepflegt,
   # nicht manuell befuellen.
   akkusteuerung_modbus_letzter_schreibwert:
     name: Akkusteuerung Modbus Letzter Schreibwert
     max: 255
 
 input_datetime:
-  # Zeitpunkt des letzten tatsaechlichen BMS-Register-Schreibvorgangs
-  # (Schreib-Diagnose, ab v1.2.0; seit v1.6.0 rein informativ). Wird vom Adapter automatisch gepflegt.
+  # Zeitpunkt des letzten tatsaechlichen Register-Schreibvorgangs, seit
+  # Haertung 2026-07 in ALLEN Modus-Branches gepflegt und Datenquelle der
+  # Stillstands-Erkennung im Waechter-Blueprint. Wird vom Adapter
+  # automatisch gepflegt.
   akkusteuerung_modbus_letzter_schreibzeitpunkt:
     name: Akkusteuerung Modbus Letzter Schreibzeitpunkt
     has_date: true

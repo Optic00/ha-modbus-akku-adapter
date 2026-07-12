@@ -227,8 +227,10 @@ Entity-Namen an:
 - Batterie-Nennkapazität (`battery_capacity_sensor`)
 - Dynamik-Sensor (`dynamic_charge_strength_sensor`)
 - Modus-Select (`mode_select`)
-- die beiden **Schreib-Diagnose-Helfer** (`last_write_value_helper`,
-  `last_write_time_helper`, Schritt 2e)
+- die beiden **Schreib-Helfer** (`last_write_value_helper`,
+  `last_write_time_helper`, Schritt 2e) – seit der Härtung 2026-07 wieder
+  funktional: der Wert-Helfer dient als Modus-Tracker für die CmpBMS-Freigabe,
+  der Zeit-Helfer als Datenquelle des Wächter-Blueprints
 - ~~Keepalive-Intervall~~ (`keepalive_seconds`): **seit v1.6.0 deprecated und ohne
   Funktion** – der Adapter schreibt den vollen Registersatz bei jedem Lauf
   unconditional (Zyklus alle 2 Minuten, SMA-Fenster 300 s)
@@ -243,8 +245,18 @@ Entity-Namen an:
 | WR-Familie | Blueprint | Raw-URL (Import, `v1.6.0`) | Status |
 |---|---|---|---|
 | **SMA STP SE Hybrid** | `sma_stp_se_adapter.yaml` | `https://raw.githubusercontent.com/Optic00/ha-modbus-akku-adapter/v1.6.0/blueprints/automation/akku_adapter/sma_stp_se_adapter.yaml` | ✅ live getestet |
+| SMA STP SE Hybrid (Wächter) | `sma_stp_se_wachter.yaml` | – (ab nächstem Release-Tag) | 🧪 neu, Gerätetest offen |
 | SMA SBS | `sma_sbs_adapter.yaml` | – | 🧪 geplant (Register-Map abweichend) |
 | Andere (z. B. Huawei) | – | – | 💬 offen |
+
+> 🛡️ **Wächter-Blueprint (empfohlen, ab Härtung 2026-07):** Die SMA-Schreibregister
+> lesen als 0/null zurück – ein Write-Verify pro Register ist unmöglich. Der Wächter
+> (`sma_stp_se_wachter.yaml`) überwacht stattdessen die **Wirkung**: er meldet, wenn der
+> Akku in einem Sperr-Modus (Pause / nur Laden / nur Entladen) trotzdem lädt/entlädt,
+> wenn der Adapter länger als 6 Minuten kein Register geschrieben hat (Status-Gate/
+> Modbus-Störung → SMA-Keepalive-Risiko) oder wenn seine Leistungssensoren unavailable
+> sind. Er braucht zwei Sensoren auf den Registern 31393/31395 (aktuelle Lade-/
+> Entladeleistung) und denselben Schreibzeitpunkt-Helfer wie der Adapter.
 
 ### Kompatibilität
 
