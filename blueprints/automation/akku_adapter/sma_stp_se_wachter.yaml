@@ -1,0 +1,213 @@
+blueprint:
+  name: "SMA STP SE – Adapter-Wächter (Sperrverletzung + Stillstand)"
+  description: >
+    Postcondition-Monitoring für den SMA-Modbus-Akku-Adapter (Härtung P3,
+    2026-07-12). KEIN Write-Verify: die SMA-Schreibregister sind flüchtig und
+    lesen als 0/null zurück, ein Readback pro Write ist damit unmöglich.
+
+    Dieser Wächter prüft stattdessen die WIRKUNG und meldet drei Zustände:
+    (1) der Akku lädt/entlädt in einem Sperr-Modus trotzdem (Flag-Versagen wie
+    beim Huawei-Gerätetest G2 oder Fenster-Durchbruch wie evcc-Issue #18339),
+    (2) der Adapter hat länger als N Minuten kein Register geschrieben
+    (Status-Gate/Modbus-Störung, Risiko: SMA-Keepalive läuft aus und der WR
+    fällt in seine interne Regelung zurück), (3) ein Leistungssensor ist
+    unavailable und der Wächter damit blind.
+
+    Grenzen (bewusst): er bestätigt keine positiven Sollwerte, wiederholt
+    keine Writes und bricht nichts ab - er alarmiert nur. Voraussetzung ist
+    der Adapter-Blueprint ab Härtung 2026-07, der den Schreibzeitpunkt-Helfer
+    in ALLEN Modus-Branches pflegt.
+  domain: automation
+  author: Optic00
+  input:
+    mode_select:
+      name: "Modus-Select (Akkusteuerung)"
+      default: input_select.akkusteuerung_modus
+      selector:
+        entity:
+          domain: input_select
+    charge_power_sensor:
+      name: Sensor aktuelle Ladeleistung (Register 31393)
+      description: Momentane Batterie-Ladeleistung in W.
+      selector:
+        entity:
+          domain: sensor
+    discharge_power_sensor:
+      name: Sensor aktuelle Entladeleistung (Register 31395)
+      description: Momentane Batterie-Entladeleistung in W.
+      selector:
+        entity:
+          domain: sensor
+    last_write_time_helper:
+      name: "Helfer: Letzter Schreibzeitpunkt des Adapters"
+      default: input_datetime.akkusteuerung_modbus_letzter_schreibzeitpunkt
+      selector:
+        entity:
+          domain: input_datetime
+    violation_threshold_w:
+      name: Verletzungs-Schwelle (W)
+      description: >
+        Leistung oberhalb dieser Schwelle im gesperrten Modus gilt als
+        Sperrverletzung. Nicht zu klein wählen (Messrauschen/Standby-Lasten).
+      default: 100
+      selector:
+        number:
+          min: 20
+          max: 1000
+          step: 10
+          unit_of_measurement: W
+    violation_minutes:
+      name: Verletzungs-Dauer (Minuten)
+      description: >
+        So lange muss die Leistung durchgehend anliegen, bevor gemeldet wird.
+        Deckt Umschalt-Transienten und den 2-min-Reconcile-Zyklus ab.
+      default: 3
+      selector:
+        number:
+          min: 1
+          max: 15
+          step: 1
+          unit_of_measurement: min
+    stall_minutes:
+      name: Stillstands-Schwelle (Minuten)
+      description: >
+        Meldet, wenn der Adapter länger als N Minuten kein Register
+        geschrieben hat (normal: alle 2 Minuten in jedem Modus).
+      default: 6
+      selector:
+        number:
+          min: 4
+          max: 30
+          step: 1
+          unit_of_measurement: min
+    notify_service:
+      name: 'Notify-Service (optional, ohne "notify."-Präfix)'
+      description: >
+        Zusätzlich zur persistenten Benachrichtigung, z. B.
+        "mobile_app_bens_iphone". Leer = nur persistente Benachrichtigung.
+      default: ""
+      selector:
+        text:
+
+variables:
+  mode_select_entity: !input mode_select
+  charge_entity: !input charge_power_sensor
+  discharge_entity: !input discharge_power_sensor
+  ts_helper: !input last_write_time_helper
+  threshold_v: !input violation_threshold_w
+  stall_minutes_v: !input stall_minutes
+  notify_service_v: !input notify_service
+  charge_locked_modes: ["Akku Pause", "Akku nur Entladen"]
+  discharge_locked_modes: ["Akku Pause", "Akku nur Laden"]
+
+triggers:
+  - trigger: numeric_state
+    entity_id: !input charge_power_sensor
+    above: !input violation_threshold_w
+    for:
+      minutes: !input violation_minutes
+    id: leistung
+  - trigger: numeric_state
+    entity_id: !input discharge_power_sensor
+    above: !input violation_threshold_w
+    for:
+      minutes: !input violation_minutes
+    id: leistung
+  # Moduswechsel IN einen Sperr-Modus bei bereits anliegender Leistung:
+  # numeric_state feuert dann nicht erneut - der Tick unten deckt das ab
+  # und prüft zugleich Stillstand und Sensor-Verfügbarkeit.
+  - trigger: time_pattern
+    minutes: "/5"
+    id: tick
+  # Wächter blind: ohne Leistungssensoren ist keine Sperr-Überwachung möglich.
+  - trigger: state
+    entity_id:
+      - !input charge_power_sensor
+      - !input discharge_power_sensor
+    to:
+      - unavailable
+      - unknown
+    for:
+      minutes: 5
+    id: sensor_weg
+
+conditions: []
+
+actions:
+  - variables:
+      modus: "{{ states(mode_select_entity) }}"
+      cha_raw: "{{ states(charge_entity) }}"
+      dsch_raw: "{{ states(discharge_entity) }}"
+      sensors_ok: >-
+        {{ cha_raw not in ['unavailable', 'unknown', 'none']
+           and dsch_raw not in ['unavailable', 'unknown', 'none'] }}
+      cha_w: "{{ cha_raw | float(0) }}"
+      dsch_w: "{{ dsch_raw | float(0) }}"
+      last_write_age_s: >-
+        {{ (as_timestamp(now()) - as_timestamp(states(ts_helper), 0)) | round(0) }}
+      charge_violation: "{{ sensors_ok and modus in charge_locked_modes and cha_w > threshold_v }}"
+      discharge_violation: "{{ sensors_ok and modus in discharge_locked_modes and dsch_w > threshold_v }}"
+      stalled: "{{ last_write_age_s > stall_minutes_v | int * 60 }}"
+  - choose:
+      - conditions: "{{ trigger.id == 'sensor_weg' or (trigger.id == 'tick' and not sensors_ok) }}"
+        sequence:
+          - action: persistent_notification.create
+            data:
+              notification_id: sma_adapter_wachter_blind
+              title: "Akku-Adapter-Wächter: blind"
+              message: >-
+                Mindestens ein Leistungssensor ist unavailable/unknown
+                (Laden: {{ cha_raw }}, Entladen: {{ dsch_raw }}).
+                Sperrverletzungen sind aktuell NICHT erkennbar.
+          - if:
+              - "{{ notify_service_v != '' }}"
+            then:
+              - action: "notify.{{ notify_service_v }}"
+                continue_on_error: true
+                data:
+                  title: "Akku-Adapter-Wächter: blind"
+                  message: "Leistungssensoren unavailable - keine Sperr-Überwachung."
+      - conditions: "{{ charge_violation or discharge_violation }}"
+        sequence:
+          - action: persistent_notification.create
+            data:
+              notification_id: sma_adapter_sperrverletzung
+              title: "Akku-Adapter: Sperrverletzung"
+              message: >-
+                Modus "{{ modus }}", aber der Akku
+                {{ 'lädt mit ' ~ cha_w ~ ' W' if charge_violation else 'entlädt mit ' ~ dsch_w ~ ' W' }}
+                (Schwelle {{ threshold_v }} W). OpMod-Flag und 0-W-Fenster
+                wirken nicht wie erwartet - Anlage prüfen.
+          - if:
+              - "{{ notify_service_v != '' }}"
+            then:
+              - action: "notify.{{ notify_service_v }}"
+                continue_on_error: true
+                data:
+                  title: "Akku-Adapter: Sperrverletzung"
+                  message: >-
+                    Modus "{{ modus }}", Akku lädt/entlädt trotzdem
+                    ({{ cha_w }}/{{ dsch_w }} W).
+      - conditions: "{{ trigger.id == 'tick' and stalled }}"
+        sequence:
+          - action: persistent_notification.create
+            data:
+              notification_id: sma_adapter_stillstand
+              title: "Akku-Adapter: schreibt nicht mehr"
+              message: >-
+                Letzter Modbus-Schreibvorgang vor
+                {{ (last_write_age_s / 60) | round(0) }} Minuten (Soll: alle 2).
+                Vermutlich blockiert das WR-Status-Gate oder Modbus ist
+                gestört. Risiko: SMA-Keepalive läuft aus, der WR fällt in
+                seine interne Regelung zurück.
+          - if:
+              - "{{ notify_service_v != '' }}"
+            then:
+              - action: "notify.{{ notify_service_v }}"
+                continue_on_error: true
+                data:
+                  title: "Akku-Adapter: schreibt nicht mehr"
+                  message: "Letzter Schreibvorgang vor {{ (last_write_age_s / 60) | round(0) }} min."
+
+mode: single
+max_exceeded: silent
