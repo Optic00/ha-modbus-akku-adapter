@@ -1,9 +1,11 @@
-# TODO: Härtung SMA-Adapter (Befunde aus den Huawei-Gerätetests 2026-07-11/12)
+# Härtung SMA-Adapter: Befunde aus den Huawei-Gerätetests 2026-07-11/12
 
-> **Status 2026-07-12:** Code-Härtung umgesetzt auf Branch `feat/haertung-sperren-semantik`
-> (Plan + Adversarial-Review: `docs/superpowers/plans/2026-07-12-haertung-sperren-semantik.md`).
-> Die Gerätetests (`docs/geraetetests-haertung-2026-07.md`) sind **Release-Gate** und
-> brauchen Bens Go - bis dahin kein Merge nach `main`, kein Deploy.
+> **Status: erledigt.** Alle Befunde sind umgesetzt und mit
+> [v1.7.0](../CHANGELOG.md) veröffentlicht. Das Release-Gate aus Gerätetests am
+> 12.07.2026 ist bestanden, Protokoll in
+> [`geraetetests-haertung-2026-07.md`](geraetetests-haertung-2026-07.md).
+> Dieses Dokument bleibt als Begründung erhalten: es hält fest, warum der Adapter
+> Sperren nicht auf Modus-Flags allein stützt.
 
 Quelle: Beim baugleichen Huawei-Adapter (Projekt ha-hesselmann, `ADAPTER-MODUSMATRIX-HUAWEI.md` V2.2) wurden bei Gerätetests vier generische Schwachstellen-Muster gefunden.
 Ein Read-only-Review (Opus 4.8, 2026-07-12) hat geprüft, ob dieselben Muster in `blueprints/automation/akku_adapter/sma_stp_se_adapter.yaml` existieren.
@@ -46,11 +48,4 @@ Sperren dürfen nur auf Mechanismen ruhen, die am Gerät als hart bewiesen sind.
 
 - Das WR-Status-Gate (Z. 240-241) blockiert bei unavailable/unknown die gesamte Automation inklusive der Sperr-Modi.
 - Bewusste Design-Entscheidung mit SMA-Keepalive-Timeout als Hardware-Fallback (Z. 45-53, 228-239); der 2-min-Reconcile heilt symmetrisch.
-- [ ] Nur prüfen, ob die Sperr-Zweige vom Gate ausgenommen werden können, ohne die Keepalive-Argumentation zu brechen.
-
-## Übergabeprompt für die nächste Session
-
-> Lies `TODO-HAERTUNG-SMA-ADAPTER.md` in `~/Dev/Repositorys/ha-modbus-akku-adapter` und arbeite die Punkte P1-P4 am Blueprint `blueprints/automation/akku_adapter/sma_stp_se_adapter.yaml` ab (P1/P2 zuerst; P1-Gerätetests nur nach meinem Go, das ist meine eigene HA-Instanz 192.168.10.2).
-> Kontext und Referenzmuster: Huawei-Adapter `~/Dev/sandbox/ha-hesselmann/blueprints/huawei_sun2000_adapter.yaml` (Write-Verify, Restrict-before-enable, Tracker) plus `ADAPTER-MODUSMATRIX-HUAWEI.md` V2.2 (Gerätebefunde G1-G4).
-> Hole vor der Umsetzung eine adversariale Zweitmeinung zum Änderungsplan über Codex ein: `/codex:adversarial-review` mit `--model gpt-5.6-sol --effort high`, Fokus: Sperren-Semantik (Verbots-Flags vs. 0-W-Grenzen), Exit-Reihenfolge, Write-Verify-Abdeckung.
-> Nach der Umsetzung `/codex:review` (gleiches Modell/Effort) über den Diff laufen lassen, Findings abarbeiten und alles im CHANGELOG-freien Arbeitslog des Repos dokumentieren (CHANGELOG.md nicht manuell anfassen).
+- Offen als bewusste Beobachtung: ob die Sperr-Zweige vom Gate ausgenommen werden können, ohne die Keepalive-Argumentation zu brechen. Bis dahin bleibt das Gate wie beschrieben.

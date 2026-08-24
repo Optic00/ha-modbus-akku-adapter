@@ -5,3 +5,8 @@ docs/superpowers/
 
 # Interner Fix-Report - nicht versionieren
 .superpowers-fix-report.md
+
+# Roh-Messlogs der Geraetetests sind BELEG und gehoeren ins Repo.
+# Ein globales *.log in ~/.gitignore_global hatte sie stillschweigend
+# ausgeschlossen, obwohl docs/geraetetests-haertung-2026-07.md sie zitiert.
+!docs/messdaten-*.log

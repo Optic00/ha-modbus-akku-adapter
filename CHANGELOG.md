@@ -12,6 +12,56 @@ unabhängig weiterentwickelt werden können (Versions-Skew vermeiden).
 - `sma_sbs_adapter.yaml` (abweichendes Register-Map, gleicher Contract).
 - Capability-Schicht (Adapter meldet Fähigkeiten) – erst mit erstem Nicht-SMA-Adapter.
 
+## [1.7.0] - 2026-08-24 - Adapter `sma_stp_se`: Härtung der Sperren-Semantik + Wächter-Blueprint
+
+Hintergrund: Gerätetests am baugleichen Huawei-Adapter hatten vier generische Schwachstellen-
+Muster geliefert (P1-P5), die auf dem SMA nachgezogen wurden - zentrale Lektion: Sperren dürfen
+nur auf Mechanismen ruhen, die am Gerät als hart bewiesen sind, nicht auf Verbots-Flags. Die
+Befunde und ihre Auflösung stehen in `docs/haertung-befunde-2026-07.md`. Mehrere unabhängige
+Codex-Reviews (adversarial auf den Plan, zwei auf den Diff) lieferten 12 Findings, alle
+eingearbeitet. Das Release-Gate aus Gerätetests am echten Wechselrichter (12.07.2026) ist
+bestanden und in `docs/geraetetests-haertung-2026-07.md` samt Roh-Messlogs protokolliert.
+
+### Hinzugefügt
+- **Wächter-Blueprint `sma_stp_se_wachter.yaml`:** Postcondition-Monitoring, weil ein
+  Write-Verify pro Register unmöglich ist - die SMA-Schreibregister sind flüchtig und lesen
+  als 0/null zurück. Überwacht stattdessen die Wirkung: Lade-/Entladeleistung in einem
+  Sperr-Modus (31393/31395), Adapter-Stillstand über den Schreibzeitpunkt-Helfer und
+  unavailable gewordene Leistungssensoren.
+- pytest-Tests der Blueprint-Jinja-Variablen laufen in der CI, inklusive Strukturtests, die
+  die Schreibreihenfolge (803 vor Fenster) einfrieren.
+
+### Geändert
+- **Sperr-Modi schreiben das jeweils verbotene BMS-Fenster zusätzlich als [0, 0]** - eine
+  zweite Verteidigungslinie neben den OpMod-Flags. Vorher blieb in "nur Laden" das
+  Entladeziel positiv und umgekehrt; die Sperre hing allein am Flag.
+- **`mode: queued` (max 3, silent) plus zwei Stale-Guards:** Home Assistant rendert die
+  Top-Level-Variablen beim Auslösen, ein wartender Lauf trägt sonst veraltete Fensterwerte.
+  Der zweite Guard sitzt hinter der CmpBMS-Freigabesequenz und schreibt bei einem Rückkipper
+  in einen Sperr-Modus ein konservatives Sperr-Set, statt nur zu stoppen.
+- **Stale-Cleanup (40151=803) in allen Kommando-Branches**, damit bei einem Moduswechsel
+  keine fremde Schiene aktiv stehenbleibt.
+- **CmpBMS-Freigabe beim Wechsel Sperr-Modus → Kommando-/Automatik-Modus** über einen
+  Modus-Tracker: der Snapshot-Helfer `last_write_value_helper` ist damit wieder funktional
+  statt reiner Diagnose und speichert `CMD|<Modus>`.
+- **Register 40149 auf 0 bis 10000 W geklemmt.**
+- Exit-Reihenfolge geprüft und bewusst beibehalten: 803 zuerst neutralisiert eine aktive
+  Ladevorgabe sofort, die Fenster sind in Sperr-Modi ohnehin restriktiv, OpMod kommt zuletzt.
+  Ein Pre-Arm der CmpBMS-Register bei aktiver 802-Schiene wird vom Gerät verworfen - am
+  Gerät belegt.
+
+### Dokumentation
+- WR-Status-Gate in Blueprint, README und Helfer-Beispiel eindeutig beschrieben: der rohe
+  Modbus-Sensor auf Register 33003 liefert Zahlencodes, der Vorgabewert `"Ok"` passt nicht zu
+  ihm. Aus Issue Optic00/ha-opti-akkusteuerung#64.
+- Registerreferenz: `16777213` = "Information liegt nicht vor" ergänzt, Register 40210 als
+  Hauptschalter für externe Vorgabe, dazu zwei Geräte-Grundgesetze (Pre-Arm unmöglich,
+  10 bis 16 s Exit-Übernahmelatenz).
+- Gerätetest-Protokolle und die zugehörigen Roh-Messlogs sind jetzt tatsächlich im Repo; ein
+  globales `*.log` hatte sie bisher stillschweigend vom Commit ausgeschlossen.
+- Die Import-Tabelle verlinkt wieder auf ein existierendes Release-Tag. Die bisher beworbene
+  URL zeigte auf `v1.6.0`, ein Tag, das nie gesetzt wurde.
+
 ## [1.6.1] - 2026-07-04 - Adapter `sma_stp_se`: Grenzfenster-Invariante gegen entartetes BMS-Fenster
 
 Hintergrund: Codebase-Review (Claude, gegengeprueft mit unabhaengiger Architektur-
