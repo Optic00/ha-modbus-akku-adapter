@@ -116,9 +116,17 @@ input_number:
 #    dem Schwesterprojekt ha-opti-akkusteuerung – oder du baust einen eigenen
 #    (Template-)Sensor, der schlicht eine Watt-Zahl ausgibt.
 #
-# 2) WR-Betriebsstatus-Sensor, der "Ok" liefert, wenn der WR bereit ist.
-#    Der rohe Modbus-Sensor (Register 33003) gibt nur Zahlen zurück (z. B. 235 =
-#    Netzparallelbetrieb). Mappe ihn per Template auf "Ok", z. B.:
+# 2) WR-Betriebsstatus-Sensor für das Schreib-Gate des Blueprints.
+#    Empfohlen (kein Template nötig): den rohen Modbus-Sensor auf Register
+#    33003 direkt als "WR Betriebsstatus-Sensor" auswählen. Er liefert
+#    Zahlencodes; die bei dir betriebsbereiten Codes gehören dann als Strings
+#    in den Blueprint-Input "WR-Status: als betriebsbereit akzeptierte Werte",
+#    z. B. "235" (Netzparallelbetrieb), "1463" (Backup), "2119" (Abregelung).
+#    Der Blueprint-Vorgabewert "Ok" passt NICHT zu diesem Rohsensor - bleibt er
+#    stehen, schreibt der Adapter nie ein Register.
+#
+#    Alternative: einen Template-Sensor bauen, der die Codes nach Text
+#    übersetzt, und dann "Ok" als akzeptierten Wert stehen lassen:
 #
 #    template:
 #      - sensor:
@@ -127,5 +135,7 @@ input_number:
 #              {% set s = states('sensor.sma_stp_se_33003_betriebsstatus') | int(0) %}
 #              {{ 'Ok' if s in [235, 1463] else 'nicht bereit' }}
 #
-#    Diesen Sensor im Blueprint als "WR Betriebsstatus-Sensor" auswählen.
+#    Achtung bei dieser Variante: jeder Code, den die Vorlage NICHT nach "Ok"
+#    übersetzt, blockiert alle Adapter-Läufe inklusive Keepalive. Siehe
+#    README, Abschnitt "Der WR-Status-Sensor".
 # =============================================================================

@@ -158,6 +158,15 @@ als Strings in `inverter_ok_states` auflisten, z. B. `["235", "1463", "2119"]`
 Historie unter *Entwicklerwerkzeuge → Verlauf*. Kein zusätzlicher Sensor nötig, keine
 Text-Übersetzung, die veralten kann.
 
+> ⚠️ **Der Blueprint-Vorgabewert `"Ok"` passt nicht zum Rohsensor.** Register 33003 liefert
+> Zahlencodes; bleibt `inverter_ok_states` auf `"Ok"` stehen, ist das Gate dauerhaft zu und
+> der Adapter schreibt nie ein Register. Beim Rohsensor also immer die Codes eintragen.
+>
+> Der Wert `16777213` (`0x00FFFFFD`) gehört **nicht** in die Liste: er heißt bei SMA
+> „Information liegt nicht vor“ und ist kein bestätigter Betriebszustand. Taucht er
+> regelmäßig auf, liegt die Ursache in der Modbus-Verbindung oder im WR-Zustand - die
+> gehört behoben, statt den Wert freizuschalten.
+
 **Alternative: eigener Vorlage-Sensor.** Wer lieber mit Text statt Zahlencodes arbeitet,
 kann sich stattdessen einen Template-Sensor bauen, der `"Ok"` liefert, wenn der WR
 bereit ist:
@@ -235,17 +244,24 @@ Entity-Namen an:
   Funktion** – der Adapter schreibt den vollen Registersatz bei jedem Lauf
   unconditional (Zyklus alle 2 Minuten, SMA-Fenster 300 s)
 
-> 💡 **Stabile URL statt `main`:** Die Tabelle unten verlinkt auf den aktuellen Release-Tag
-> (`v1.6.0`), nicht auf den `main`-Branch. `main` kann zwischenzeitlich unfertige
-> Zwischenstände enthalten. Für ein Update auf eine neue Version: Blueprint erneut mit der
-> URL des neuen Tags importieren (HA zeigt dann den Diff). Alle Releases: siehe
-> [CHANGELOG.md](CHANGELOG.md) bzw. [Tags](https://github.com/Optic00/ha-modbus-akku-adapter/tags).
+> 💡 **Import-Quelle:** Die Tabelle unten verlinkt derzeit auf `main`. Das jüngste
+> Release-Tag ist [`v1.5.0`](https://github.com/Optic00/ha-modbus-akku-adapter/tags); die
+> Versionen 1.6.0 und 1.6.1 aus dem [CHANGELOG.md](CHANGELOG.md) sind noch nicht getaggt,
+> und 1.5.0 enthält die dort behobene Grenzfenster-Invariante noch nicht. Bis das nächste
+> Tag steht, ist `main` deshalb der empfohlene Stand.
+>
+> ⚠️ `main` ist beweglich: ein späterer Import über dieselbe URL kann einen anderen
+> Blueprint-Stand liefern als heute, auch einen noch nicht fertig getesteten
+> Zwischenstand. Wer das vermeiden will, importiert die Datei aus einem konkreten Commit
+> (`.../<commit-sha>/blueprints/...`). Sobald das nächste Release-Tag steht, gilt wieder
+> der stabile Weg: mit der Tag-URL importieren und für ein Update erneut mit der URL des
+> neuen Tags (HA zeigt dann den Diff).
 >
 
-| WR-Familie | Blueprint | Raw-URL (Import, `v1.6.0`) | Status |
+| WR-Familie | Blueprint | Raw-URL (Import, `main`) | Status |
 |---|---|---|---|
-| **SMA STP SE Hybrid** | `sma_stp_se_adapter.yaml` | `https://raw.githubusercontent.com/Optic00/ha-modbus-akku-adapter/v1.6.0/blueprints/automation/akku_adapter/sma_stp_se_adapter.yaml` | ✅ live getestet |
-| SMA STP SE Hybrid (Wächter) | `sma_stp_se_wachter.yaml` | – (ab nächstem Release-Tag) | 🧪 neu, Gerätetest offen |
+| **SMA STP SE Hybrid** | `sma_stp_se_adapter.yaml` | `https://raw.githubusercontent.com/Optic00/ha-modbus-akku-adapter/main/blueprints/automation/akku_adapter/sma_stp_se_adapter.yaml` | ✅ live getestet |
+| SMA STP SE Hybrid (Wächter) | `sma_stp_se_wachter.yaml` | `https://raw.githubusercontent.com/Optic00/ha-modbus-akku-adapter/main/blueprints/automation/akku_adapter/sma_stp_se_wachter.yaml` | 🧪 neu, Gerätetest offen |
 | SMA SBS | `sma_sbs_adapter.yaml` | – | 🧪 geplant (Register-Map abweichend) |
 | Andere (z. B. Huawei) | – | – | 💬 offen |
 
