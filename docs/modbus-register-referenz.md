@@ -54,7 +54,7 @@
 | 31061 | `Bat.ChaCtlComAval` | U32 | – | 1 | `1129` = Ja (Steuerung verfügbar) · `1130` = Nein |
 | 31393 | `BatChrg.CurBatCha` | U32 | W | 1 | Aktuelle Ladeistung (Momentanwert) |
 | 31395 | `BatDsch.CurBatDsch` | U32 | W | 1 | Aktuelle Entladeleistung (Momentanwert) |
-| 33003 | `Operation.RunStt` | U32 | – | 1 | `235` = Netzparallelbetrieb · `1463` = Backup · `1469` = Herunterfahren · `2119` = Abregelung |
+| 33003 | `Operation.RunStt` | U32 | – | 1 | `235` = Netzparallelbetrieb · `1463` = Backup · `1469` = Herunterfahren · `2119` = Abregelung · `16777213` = Information liegt nicht vor (kein Betriebszustand, siehe unten) |
 | 40187 | `Bat.CapacRtgWh` | U32 | Wh | 1 | Batterie Nennkapazität (z.B. 12800 bei BYD HVS 12.8) |
 | 40723 | `BatUsDm.BckDmMin` | U32 | % | 1 | Minimale Breite des Ersatzstrombereichs (RW – persistent, nicht zyklisch schreiben) |
 | 41255 | `Inverter.WModCfg.WCtlComCfg.WNomPrc` | S16 | % | 1 | Normierte Wirkleistungsbegrenzung durch Anlagensteuerung (RW) |

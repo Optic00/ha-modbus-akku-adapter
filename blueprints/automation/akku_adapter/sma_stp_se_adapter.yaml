@@ -27,10 +27,22 @@ blueprint:
     inverter_status_sensor:
       name: WR Betriebsstatus-Sensor
       description: >
-        Sensor für den Betriebsstatus des Wechselrichters.
-        Muss einen Status aus `inverter_ok_states` liefern, damit der Adapter
-        Register schreibt (Standard-Vokabular: "Ok").
-        Typisch: sensor.sma_stp_se_33003_betriebsstatus
+        Sensor für den Betriebsstatus des Wechselrichters. Der Adapter
+        schreibt Register nur, wenn dessen aktueller Wert in
+        `inverter_ok_states` steht.
+
+        Empfohlen ist der rohe Modbus-Sensor auf Register 33003, typisch
+        sensor.sma_stp_se_33003_betriebsstatus. Der liefert Zahlencodes statt
+        Text - dann gehören die bei dir betriebsbereiten Codes als Strings in
+        `inverter_ok_states`, z. B. "235" (Netzparallelbetrieb), "1463"
+        (Backup), "2119" (Abregelung).
+
+        Der Vorgabewert "Ok" passt nur zu einem Sensor, der genau diesen Text
+        liefert - etwa dem Status-Sensor der offiziellen SMA-Integration oder
+        einem selbst gebauten Template-Sensor, der die Codes übersetzt. Mit
+        dem Rohsensor kombiniert bleibt das Gate dauerhaft zu und der Adapter
+        schreibt nie ein Register. Details: README, Abschnitt "Der
+        WR-Status-Sensor".
       selector:
         entity:
           domain: sensor
@@ -39,8 +51,15 @@ blueprint:
       name: "WR-Status: als betriebsbereit akzeptierte Werte"
       description: >
         Liste der Statuswerte von `inverter_status_sensor`, bei denen der
-        Adapter Modbus-Register schreibt (inklusive Keepalive). Standard: nur
-        "Ok".
+        Adapter Modbus-Register schreibt (inklusive Keepalive). Der
+        Vorgabewert "Ok" gilt nur für einen selbst gemappten Text-Sensor. Beim
+        empfohlenen Rohsensor auf Register 33003 stehen hier stattdessen die
+        Zahlencodes als Strings, z. B. "235", "1463", "2119".
+
+        Nicht aufnehmen: "16777213" (0x00FFFFFD) heißt bei SMA "Information
+        liegt nicht vor" und ist keine bestätigte Betriebsbereitschaft. Tritt
+        der Wert regelmäßig auf, ist zuerst zu klären, warum der WR seinen
+        Status nicht meldet, statt den Wert freizuschalten.
 
         Achtung: eine zu strenge Liste ist gefährlich. Meldet der WR einen
         Status, der hier fehlt (z. B. "2119" = Abregelung wegen der
@@ -48,8 +67,8 @@ blueprint:
         Mapping-Helfer nicht kennt), blockiert das ALLE Läufe dieser
         Automation, auch den Keepalive. Läuft die SMA-Fremdsteuerung dadurch
         in ihren Timeout, fällt der WR in seinen internen Modus zurück und
-        lädt/entlädt eigenmächtig - unabhängig vom gewählten Modus. Status-
-        Codes wie Abregelung sollten deshalb mit aufgenommen werden, wenn sie
+        lädt/entlädt eigenmächtig - unabhängig vom gewählten Modus.
+        Status-Codes wie Abregelung sollten deshalb mit aufgenommen werden, wenn sie
         im eigenen Setup regelmäßig auftreten.
       default:
         - "Ok"
