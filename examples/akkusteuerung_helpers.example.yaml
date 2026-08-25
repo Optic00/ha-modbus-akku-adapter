@@ -18,10 +18,20 @@
 input_select:
   # Das zentrale Steuer-Dropdown ("Modus-Contract"). Die Strategie setzt es,
   # der Adapter liest es. Die 9 Optionen müssen GENAU so heißen:
+  #
+  # ACHTUNG - bewusst KEIN `initial:` (Fix 2026-07-18): `initial:` überschreibt
+  # bei JEDEM Home-Assistant-Neustart den wiederhergestellten Modus. Mit
+  # `initial: Akku Automatisch` gab der Adapter den WR nach jedem Restart kurz
+  # in seine interne Eigenverbrauchsregelung frei - der lud dann ~30-60 s mit
+  # voller PV-Leistung über der dynamischen Soll-Ladestärke, bis die Strategie
+  # den Modus zurücksetzte (live belegt, mehrere Anlagen). Ohne `initial:`
+  # restauriert HA beim Neustart einfach den letzten Modus.
+  # Bestandsnutzer: prüft euren vorhandenen Helfer! Bei YAML-Helfern die Zeile
+  # `initial:` entfernen; bei UI-Helfern steht sie ggf. in
+  # /config/.storage/input_select ("initial": "Akku Automatisch" -> entfernen).
   akkusteuerung_modus:
     name: Akkusteuerung Modus
     icon: mdi:battery-charging
-    initial: Akku Automatisch
     options:
       - Akku Automatisch       # WR-Eigenregelung / Standard
       - Akku Dynamisch         # Adapter regelt auf Ziel (SoC/Leistungsgrenzen)

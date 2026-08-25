@@ -131,6 +131,18 @@ Akku schnell Entladen
 Akku 0.2C Laden
 ```
 
+> ⚠️ **Kein `initial:` am Dropdown setzen (Fix 2026-07-18):** Ein `initial:` (z. B.
+> `Akku Automatisch`) überschreibt bei **jedem HA-Neustart** den wiederhergestellten
+> Modus. Der Adapter gibt den WR dann nach jedem Restart kurz in seine interne
+> Eigenverbrauchsregelung frei – der lädt ~30–60 s mit voller PV-Leistung über der
+> dynamischen Soll-Ladestärke, bis die Strategie den Modus zurücksetzt (live belegt,
+> mehrere Anlagen).
+> **Bestandsnutzer bitte prüfen:** Bei YAML-Helfern die Zeile `initial:` entfernen
+> (ältere Versionen von `akkusteuerung_helpers.example.yaml` enthielten sie!). Bei
+> per GUI angelegten Helfern gegebenenfalls den Eintrag `"initial"` zum Helfer
+> `akkusteuerung_modus` in `/config/.storage/input_select` entfernen (HA vorher
+> stoppen oder direkt danach neu starten).
+
 **b) Die 6 Leistungs-Helfer** – jeweils Typ **„Zahl"**, Einheit `W`, Min `0`, Max z. B.
 `11000`. Name genau so eintippen → ergibt die benötigte Entity-ID:
 
