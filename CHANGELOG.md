@@ -8,6 +8,9 @@ unabhängig weiterentwickelt werden können (Versions-Skew vermeiden).
 
 ## [Unreleased]
 
+### Geändert
+- CI-Actions auf Commit-SHAs gepinnt, Dependabot für GitHub Actions, AGENTS.md ergänzt.
+
 ### Geplant
 - `sma_sbs_adapter.yaml` (abweichendes Register-Map, gleicher Contract).
 - Capability-Schicht (Adapter meldet Fähigkeiten) – erst mit erstem Nicht-SMA-Adapter.
